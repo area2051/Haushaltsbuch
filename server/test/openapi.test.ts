@@ -39,6 +39,14 @@ describe('openapi', () => {
     expect(JSON.parse(readFileSync('openapi.json', 'utf8'))).toEqual(spec)
   })
 
+  test('objects are open, uuid has no pattern, no const', () => {
+    const json = JSON.stringify(spec)
+    expect(json).not.toContain('"additionalProperties":false')
+    expect(json).not.toContain('"const"')
+    expect(json).not.toContain('Input"')
+    expect(spec.components.schemas.CategoryRecord!.properties!.id).not.toHaveProperty('pattern')
+  })
+
   test('is OpenAPI 3.1', () => {
     expect(spec.openapi).toMatch(/^3\.1/)
   })

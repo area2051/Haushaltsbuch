@@ -78,10 +78,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-    const rotated = await rotateRefreshToken(app.db, app.clock, req.body.refreshToken)
-    if (!rotated) throw new AppError(401, 'invalid_refresh_token', 'Refresh token is invalid or expired')
-    const accessToken = await signAccessToken(app.config.jwtSecret, app.clock, rotated.user)
-    return { accessToken, refreshToken: rotated.refreshToken }
+      const rotated = await rotateRefreshToken(app.db, app.clock, req.body.refreshToken)
+      if (!rotated) throw new AppError(401, 'invalid_refresh_token', 'Refresh token is invalid or expired')
+      const accessToken = await signAccessToken(app.config.jwtSecret, app.clock, rotated.user)
+      return { accessToken, refreshToken: rotated.refreshToken }
     },
   )
 

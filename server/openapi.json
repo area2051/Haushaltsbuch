@@ -2,11 +2,9 @@
   "components": {
     "schemas": {
       "BudgetRecord": {
-        "additionalProperties": false,
         "properties": {
           "categoryId": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "deleted": {
@@ -14,7 +12,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "monthlyLimitCents": {
@@ -32,11 +29,9 @@
         "type": "object"
       },
       "BudgetRecordOut": {
-        "additionalProperties": false,
         "properties": {
           "categoryId": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "deleted": {
@@ -44,7 +39,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "monthlyLimitCents": {
@@ -68,7 +62,6 @@
         "type": "object"
       },
       "CategoryRecord": {
-        "additionalProperties": false,
         "properties": {
           "archived": {
             "type": "boolean"
@@ -86,7 +79,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "kind": {
@@ -120,7 +112,6 @@
         "type": "object"
       },
       "CategoryRecordOut": {
-        "additionalProperties": false,
         "properties": {
           "archived": {
             "type": "boolean"
@@ -138,7 +129,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "kind": {
@@ -178,7 +168,6 @@
         "type": "object"
       },
       "CreateUserRequest": {
-        "additionalProperties": false,
         "properties": {
           "displayName": {
             "maxLength": 50,
@@ -207,10 +196,8 @@
         "type": "object"
       },
       "ErrorResponse": {
-        "additionalProperties": false,
         "properties": {
           "error": {
-            "additionalProperties": false,
             "properties": {
               "code": {
                 "type": "string"
@@ -232,13 +219,14 @@
         "type": "object"
       },
       "HealthResponse": {
-        "additionalProperties": false,
         "properties": {
           "setupRequired": {
             "type": "boolean"
           },
           "status": {
-            "const": "ok",
+            "enum": [
+              "ok"
+            ],
             "type": "string"
           }
         },
@@ -249,7 +237,6 @@
         "type": "object"
       },
       "LoginRequest": {
-        "additionalProperties": false,
         "properties": {
           "deviceName": {
             "maxLength": 100,
@@ -273,7 +260,6 @@
         "type": "object"
       },
       "LoginResponse": {
-        "additionalProperties": false,
         "properties": {
           "accessToken": {
             "type": "string"
@@ -293,7 +279,6 @@
         "type": "object"
       },
       "RecurringRuleRecord": {
-        "additionalProperties": false,
         "properties": {
           "amountCents": {
             "maximum": 2147483647,
@@ -302,7 +287,6 @@
           },
           "categoryId": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "deleted": {
@@ -329,7 +313,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "kind": {
@@ -352,7 +335,6 @@
           },
           "paidBy": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "startDate": {
@@ -375,7 +357,6 @@
         "type": "object"
       },
       "RecurringRuleRecordOut": {
-        "additionalProperties": false,
         "properties": {
           "amountCents": {
             "maximum": 2147483647,
@@ -384,7 +365,6 @@
           },
           "categoryId": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "deleted": {
@@ -411,7 +391,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "kind": {
@@ -438,7 +417,6 @@
           },
           "paidBy": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "startDate": {
@@ -468,7 +446,6 @@
         "type": "object"
       },
       "RefreshRequest": {
-        "additionalProperties": false,
         "properties": {
           "refreshToken": {
             "maxLength": 256,
@@ -482,7 +459,6 @@
         "type": "object"
       },
       "RejectedRecord": {
-        "additionalProperties": false,
         "properties": {
           "id": {
             "type": [
@@ -505,7 +481,6 @@
         "type": "object"
       },
       "SetupRequest": {
-        "additionalProperties": false,
         "properties": {
           "displayName": {
             "maxLength": 50,
@@ -531,7 +506,6 @@
         "type": "object"
       },
       "SetupResponse": {
-        "additionalProperties": false,
         "properties": {
           "user": {
             "$ref": "#/components/schemas/UserDto"
@@ -543,7 +517,6 @@
         "type": "object"
       },
       "SyncChanges": {
-        "additionalProperties": false,
         "properties": {
           "budgets": {
             "items": {
@@ -586,10 +559,8 @@
         "type": "object"
       },
       "SyncRequest": {
-        "additionalProperties": false,
         "properties": {
           "changes": {
-            "additionalProperties": false,
             "properties": {
               "budgets": {
                 "items": {
@@ -631,7 +602,6 @@
         "type": "object"
       },
       "SyncResponse": {
-        "additionalProperties": false,
         "properties": {
           "changes": {
             "$ref": "#/components/schemas/SyncChanges"
@@ -660,7 +630,6 @@
         "type": "object"
       },
       "TokenPair": {
-        "additionalProperties": false,
         "properties": {
           "accessToken": {
             "type": "string"
@@ -676,7 +645,6 @@
         "type": "object"
       },
       "TransactionRecord": {
-        "additionalProperties": false,
         "properties": {
           "amountCents": {
             "maximum": 2147483647,
@@ -685,7 +653,6 @@
           },
           "categoryId": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "date": {
@@ -697,7 +664,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "kind": {
@@ -720,14 +686,12 @@
           },
           "paidBy": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "recurringRuleId": {
             "anyOf": [
               {
                 "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                 "type": "string"
               },
               {
@@ -750,7 +714,6 @@
         "type": "object"
       },
       "TransactionRecordOut": {
-        "additionalProperties": false,
         "properties": {
           "amountCents": {
             "maximum": 2147483647,
@@ -759,7 +722,6 @@
           },
           "categoryId": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "date": {
@@ -771,7 +733,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "kind": {
@@ -794,14 +755,12 @@
           },
           "paidBy": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "recurringRuleId": {
             "anyOf": [
               {
                 "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                 "type": "string"
               },
               {
@@ -830,7 +789,6 @@
         "type": "object"
       },
       "UpdateMeRequest": {
-        "additionalProperties": false,
         "properties": {
           "currentPassword": {
             "maxLength": 1024,
@@ -855,7 +813,6 @@
         "type": "object"
       },
       "UpdateUserRequest": {
-        "additionalProperties": false,
         "properties": {
           "displayName": {
             "maxLength": 50,
@@ -874,14 +831,12 @@
         "type": "object"
       },
       "UserDto": {
-        "additionalProperties": false,
         "properties": {
           "displayName": {
             "type": "string"
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "isAdmin": {
@@ -900,7 +855,6 @@
         "type": "object"
       },
       "UserRecord": {
-        "additionalProperties": false,
         "properties": {
           "deleted": {
             "type": "boolean"
@@ -910,7 +864,6 @@
           },
           "id": {
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "isAdmin": {

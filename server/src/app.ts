@@ -12,8 +12,8 @@ import type { Clock } from './clock.js'
 import { systemClock, todayIn } from './clock.js'
 import type { Config } from './config.js'
 import type { Db } from './db/client.js'
-import { collapseInputSchemas } from './openapi/dedupe.js'
 import { errorHandler, notFoundHandler } from './errors.js'
+import { cleanComponentSchemas, collapseInputSchemas } from './openapi/dedupe.js'
 import { generateDueTransactions } from './recurring/generator.js'
 import { setupRoutes } from './setup/routes.js'
 import { syncRoutes } from './sync/routes.js'
@@ -51,7 +51,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       },
     },
     transform: jsonSchemaTransform,
-    transformObject: (doc) => collapseInputSchemas(jsonSchemaTransformObject(doc)),
+    transformObject: (doc) => collapseInputSchemas(cleanComponentSchemas(jsonSchemaTransformObject(doc))),
   })
 
   registerAuth(app)

@@ -2,7 +2,7 @@ import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify'
 import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 
-/** Error envelope returned for every non-2xx response. */
+/** Error envelope returned (keep in sync with `envelope()` below) for every non-2xx response. */
 export const errorResponse = z
   .object({ error: z.object({ code: z.string(), message: z.string() }) })
   .meta({ id: 'ErrorResponse' })
