@@ -14,6 +14,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-openapi-generator", from: "1.14.3"),
         .package(url: "https://github.com/apple/swift-openapi-runtime", from: "1.13.3"),
         .package(url: "https://github.com/apple/swift-openapi-urlsession", from: "1.4.0"),
+        .package(url: "https://github.com/apple/swift-http-types", from: "1.8.0"),
     ],
     targets: [
         .target(
@@ -27,11 +28,27 @@ let package = Package(
             ]
         ),
         .target(name: "HaushaltsbuchCore"),
-        .target(name: "HaushaltsbuchData", dependencies: ["HaushaltsbuchCore", "HaushaltsbuchAPI"]),
+        .target(
+            name: "HaushaltsbuchData",
+            dependencies: [
+                "HaushaltsbuchCore",
+                "HaushaltsbuchAPI",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ]
+        ),
         .target(name: "HaushaltsbuchUI", dependencies: ["HaushaltsbuchData", "HaushaltsbuchCore"]),
         .testTarget(name: "HaushaltsbuchAPITests", dependencies: ["HaushaltsbuchAPI"]),
         .testTarget(name: "HaushaltsbuchCoreTests", dependencies: ["HaushaltsbuchCore"]),
-        .testTarget(name: "HaushaltsbuchDataTests", dependencies: ["HaushaltsbuchData"]),
+        .testTarget(
+            name: "HaushaltsbuchDataTests",
+            dependencies: [
+                "HaushaltsbuchData",
+                "HaushaltsbuchAPI",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ]
+        ),
         .testTarget(name: "HaushaltsbuchUITests", dependencies: ["HaushaltsbuchUI"]),
     ],
     swiftLanguageModes: [.v6]
