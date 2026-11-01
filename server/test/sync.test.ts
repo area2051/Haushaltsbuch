@@ -188,6 +188,33 @@ describe('POST /sync', () => {
     expect(rows.map((x) => x.id)).toEqual([good.id])
   })
 
+  test('missing nullable keys (note, recurringRuleId, endDate) are accepted as null', async () => {
+    // swift-openapi-generator encodes nil optionals by omitting the key instead of sending null.
+    const { admin, token } = await start()
+    const cat = await categoryId(token)
+    const { note: _n, recurringRuleId: _r, ...record } = txn({ categoryId: cat, paidBy: admin.id })
+    const { note: _rn, endDate: _e, ...ruleRecord } = rule({ categoryId: cat, paidBy: admin.id })
+    const r = await sync(token, 0, { transactions: [record], recurringRules: [ruleRecord] })
+    expect(r.rejected).toEqual([])
+    expect(r.changes.transactions[0]).toMatchObject({ id: record.id, note: null, recurringRuleId: null })
+    expect(r.changes.recurringRules[0]).toMatchObject({ id: ruleRecord.id, note: null, endDate: null })
+    const [row] = await t.db.select().from(transactions).where(eq(transactions.id, record.id))
+    expect(row).toMatchObject({ note: null, recurringRuleId: null })
+    const [ruleRow] = await t.db.select().from(recurringRules).where(eq(recurringRules.id, ruleRecord.id))
+    expect(ruleRow).toMatchObject({ note: null, endDate: null })
+  })
+
+  test('other missing required keys still reject the record', async () => {
+    const { admin, token } = await start()
+    const cat = await categoryId(token)
+    const { date: _d, ...noDate } = txn({ categoryId: cat, paidBy: admin.id })
+    const { startDate: _s, ...noStart } = rule({ categoryId: cat, paidBy: admin.id })
+    const r = await sync(token, 0, { transactions: [noDate], recurringRules: [noStart] })
+    expect(r.rejected.map((x) => x.id).sort()).toEqual([noDate.id, noStart.id].sort())
+    expect(r.rejected.find((x) => x.id === noDate.id)!.reason).toContain('date')
+    expect(r.rejected.find((x) => x.id === noStart.id)!.reason).toContain('startDate')
+  })
+
   test('records that are not objects are rejected with id null', async () => {
     const { token } = await start()
     const r = await sync(token, 0, { transactions: [42, null], categories: ['x'] })

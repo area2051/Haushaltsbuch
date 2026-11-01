@@ -17,14 +17,36 @@ function rewriteRefs(value: Json, map: Map<string, string>): Json {
   return value
 }
 
+const isPlainObject = (v: Json): v is { [k: string]: Json } => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * `anyOf: [{type: T, ...constraints}, {type: "null"}]` → `{type: [T, "null"], ...constraints}`.
+ * Equivalent JSON Schema, but swift-openapi-generator 1.x cannot express `{type: "null"}` inside
+ * `anyOf` and silently drops the whole property; type arrays become Swift optionals. Only applied
+ * to a single primitive type without `enum` (an enum would also need `null` among its values).
+ */
+function collapseNullableAnyOf(value: { [k: string]: Json }): { [k: string]: Json } {
+  const anyOf = value.anyOf
+  if (!Array.isArray(anyOf) || anyOf.length !== 2) return value
+  const nullIndex = anyOf.findIndex((s) => isPlainObject(s) && Object.keys(s).length === 1 && s.type === 'null')
+  if (nullIndex === -1) return value
+  const other = anyOf[1 - nullIndex]!
+  if (!isPlainObject(other) || typeof other.type !== 'string' || 'enum' in other) return value
+  if (!['string', 'integer', 'number', 'boolean'].includes(other.type)) return value
+  const { anyOf: _drop, ...rest } = value
+  return { ...rest, ...other, type: [other.type, 'null'] }
+}
+
 /**
  * Makes schemas client-friendly: objects stay open (no `additionalProperties: false`, so new server
  * fields do not break strict Swift decoders; zod strips unknown request keys rather than rejecting
- * them), `const` becomes a one-value `enum`, and the redundant uuid `pattern` is dropped.
+ * them), `const` becomes a one-value `enum`, the redundant uuid `pattern` is dropped, and nullable
+ * primitives are written as type arrays instead of `anyOf` with `null`.
  */
-function cleanSchema(value: Json): Json {
-  if (Array.isArray(value)) return value.map(cleanSchema)
-  if (value === null || typeof value !== 'object') return value
+function cleanSchema(input: Json): Json {
+  if (Array.isArray(input)) return input.map(cleanSchema)
+  if (input === null || typeof input !== 'object') return input
+  const value = collapseNullableAnyOf(input)
   const out: Record<string, Json> = {}
   for (const [k, v] of Object.entries(value)) {
     if (k === 'additionalProperties' && v === false) continue

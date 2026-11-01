@@ -12,7 +12,7 @@ type Spec = {
   openapi: string
   paths: Record<string, Record<string, Op>>
   components: {
-    schemas: Record<string, { properties?: Record<string, { format?: string; type?: string }> }>
+    schemas: Record<string, { properties?: Record<string, { format?: string; type?: string | string[] }> }>
     securitySchemes: Record<string, unknown>
   }
 }
@@ -45,6 +45,17 @@ describe('openapi', () => {
     expect(json).not.toContain('"const"')
     expect(json).not.toContain('Input"')
     expect(spec.components.schemas.CategoryRecord!.properties!.id).not.toHaveProperty('pattern')
+  })
+
+  test('nullable fields use type arrays, not anyOf with null (swift-openapi-generator drops those)', () => {
+    expect(JSON.stringify(spec).includes('{"type":"null"}')).toBe(false)
+    const props = (name: string) => spec.components.schemas[name]!.properties!
+    expect(props('TransactionRecord').note).toEqual({ type: ['string', 'null'], maxLength: 200 })
+    expect(props('TransactionRecord').recurringRuleId).toEqual({ type: ['string', 'null'], format: 'uuid' })
+    expect(props('TransactionRecordOut').recurringRuleId).toEqual({ type: ['string', 'null'], format: 'uuid' })
+    expect(props('RecurringRuleRecord').note).toEqual({ type: ['string', 'null'], maxLength: 200 })
+    expect(props('RecurringRuleRecord').endDate).toEqual({ type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' })
+    expect(props('RecurringRuleRecordOut').endDate).toEqual({ type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' })
   })
 
   test('is OpenAPI 3.1', () => {

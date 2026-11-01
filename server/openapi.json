@@ -290,14 +290,10 @@
             "type": "boolean"
           },
           "endDate": {
-            "anyOf": [
-              {
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "frequency": {
@@ -320,14 +316,10 @@
             "type": "string"
           },
           "note": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "maxLength": 200,
+            "type": [
+              "string",
+              "null"
             ]
           },
           "paidBy": {
@@ -368,14 +360,10 @@
             "type": "boolean"
           },
           "endDate": {
-            "anyOf": [
-              {
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "frequency": {
@@ -667,14 +655,10 @@
             "type": "string"
           },
           "note": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "maxLength": 200,
+            "type": [
+              "string",
+              "null"
             ]
           },
           "paidBy": {
@@ -682,14 +666,10 @@
             "type": "string"
           },
           "recurringRuleId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -746,14 +726,10 @@
             "type": "string"
           },
           "recurringRuleId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "version": {

@@ -67,6 +67,24 @@ export const recurringRuleRecord = z.object({
   path: ['endDate'],
 }).meta({ id: 'RecurringRuleRecord' })
 
+/**
+ * Push parsing: a missing nullable key counts as `null`. The generated iOS client
+ * (swift-openapi-generator) encodes `nil` by omitting the key instead of sending `null`. The
+ * documented schemas above stay unchanged (keys listed as required, `null` allowed); only the
+ * per-record parsing in `applySync` is lenient. Any other missing required key still rejects.
+ */
+function missingAsNull<T>(schema: z.ZodType<T>, keys: readonly string[]): z.ZodType<T> {
+  return z.preprocess((raw) => {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw
+    const filled: Record<string, unknown> = { ...raw }
+    for (const k of keys) if (!(k in filled)) filled[k] = null
+    return filled
+  }, schema)
+}
+
+export const transactionRecordPush = missingAsNull(transactionRecord, ['note', 'recurringRuleId'])
+export const recurringRuleRecordPush = missingAsNull(recurringRuleRecord, ['note', 'endDate'])
+
 export type CategoryRecord = z.infer<typeof categoryRecord>
 export type TransactionRecord = z.infer<typeof transactionRecord>
 export type BudgetRecord = z.infer<typeof budgetRecord>

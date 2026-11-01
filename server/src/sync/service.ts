@@ -10,12 +10,12 @@ import {
   type CategoryRecord,
   categoryRecord,
   type RecurringRuleRecord,
-  recurringRuleRecord,
+  recurringRuleRecordPush,
   type SyncChanges,
   type SyncRequest,
   type SyncResponse,
   type TransactionRecord,
-  transactionRecord,
+  transactionRecordPush,
 } from './schemas.js'
 
 /** A transaction or savepoint handle (both expose the same query API). */
@@ -343,13 +343,13 @@ export async function applySync(
       else await c.write(tx, 'categories', r.id, (sp) => upsertCategory(sp, r))
     }
     for (const raw of req.changes.recurringRules ?? []) {
-      const r = c.parse('recurringRules', raw, recurringRuleRecord)
+      const r = c.parse('recurringRules', raw, recurringRuleRecordPush)
       if (r && (await c.write(tx, 'recurringRules', r.id, (sp) => upsertRecurringRule(sp, r, today)))) {
         rulesChanged = true
       }
     }
     for (const raw of req.changes.transactions ?? []) {
-      const r = c.parse('transactions', raw, transactionRecord)
+      const r = c.parse('transactions', raw, transactionRecordPush)
       if (r) await c.write(tx, 'transactions', r.id, (sp) => upsertTransaction(sp, r))
     }
     for (const raw of req.changes.budgets ?? []) {
