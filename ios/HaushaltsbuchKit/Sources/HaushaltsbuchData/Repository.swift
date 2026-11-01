@@ -21,14 +21,14 @@ public final class Repository {
     // MARK: Lesen (aktive = nicht gelöscht)
 
     public func activeTransactions() -> [TransactionEntity] {
-        fetch(FetchDescriptor<TransactionEntity>(
+        fetchOrEmpty(FetchDescriptor<TransactionEntity>(
             predicate: #Predicate { !$0.softDeleted },
             sortBy: [SortDescriptor(\.day, order: .reverse)]))
     }
 
     /// Archivierte sind enthalten; Aufrufer filtern.
     public func activeCategories(kind: Kind? = nil) -> [CategoryEntity] {
-        let all = fetch(FetchDescriptor<CategoryEntity>(
+        let all = fetchOrEmpty(FetchDescriptor<CategoryEntity>(
             predicate: #Predicate { !$0.softDeleted },
             sortBy: [SortDescriptor(\.sortOrder)]))
         guard let kind else { return all }
@@ -36,26 +36,30 @@ public final class Repository {
     }
 
     public func activeBudgets() -> [BudgetEntity] {
-        fetch(FetchDescriptor<BudgetEntity>(predicate: #Predicate { !$0.softDeleted }))
+        fetchOrEmpty(FetchDescriptor<BudgetEntity>(predicate: #Predicate { !$0.softDeleted }))
     }
 
     public func activeRules() -> [RecurringRuleEntity] {
-        fetch(FetchDescriptor<RecurringRuleEntity>(
+        fetchOrEmpty(FetchDescriptor<RecurringRuleEntity>(
             predicate: #Predicate { !$0.softDeleted },
             sortBy: [SortDescriptor(\.startDate)]))
     }
 
     public func activeMembers() -> [MemberEntity] {
-        fetch(FetchDescriptor<MemberEntity>(
+        fetchOrEmpty(FetchDescriptor<MemberEntity>(
             predicate: #Predicate { !$0.softDeleted },
             sortBy: [SortDescriptor(\.displayName)]))
     }
 
+    /// Anzeigewert; bei Lesefehler 0.
     public var pendingChangesCount: Int {
-        count(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.isDirty }))
-        + count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.isDirty }))
-        + count(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.isDirty }))
-        + count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.isDirty }))
+        let counts = try? [
+            count(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.isDirty })),
+            count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.isDirty })),
+            count(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.isDirty })),
+            count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.isDirty })),
+        ]
+        return counts?.reduce(0, +) ?? 0
     }
 
     // MARK: Buchungen
@@ -95,7 +99,7 @@ public final class Repository {
     public func saveCategory(_ draft: CategoryDraft) throws -> CategoryEntity {
         let entity: CategoryEntity
         if let id = draft.id {
-            guard let existing = fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.id == id })).first
+            guard let existing = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.id == id })).first
             else { throw RepositoryError.notFound }
             existing.name = draft.name
             existing.icon = draft.icon
@@ -103,7 +107,9 @@ public final class Repository {
             existing.kind = draft.kind.rawValue
             entity = existing
         } else {
-            let next = (activeCategories(kind: draft.kind).map(\.sortOrder).max() ?? -1) + 1
+            let sameKind = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { !$0.softDeleted }))
+                .filter { $0.kind == draft.kind.rawValue }
+            let next = (sameKind.map(\.sortOrder).max() ?? -1) + 1
             entity = CategoryEntity(name: draft.name, icon: draft.icon, color: draft.color,
                                     kind: draft.kind, sortOrder: next)
             context.insert(entity)
@@ -116,13 +122,15 @@ public final class Repository {
     /// Mit nicht gelöschten Buchungen/Regeln: archivieren, sonst Soft-Delete (inkl. Budget der Kategorie).
     public func removeCategory(_ c: CategoryEntity) throws {
         let id = c.id
-        let used = count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted })) > 0
-            || count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted })) > 0
+        // Zählfehler werfen (statt als „unbenutzt“ zu gelten und die Kategorie zu löschen).
+        let txCount = try count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted }))
+        let ruleCount = try count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted }))
+        let used = txCount > 0 || ruleCount > 0
         if used {
             c.archived = true
         } else {
             c.deleted = true
-            for b in fetch(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted })) {
+            for b in try fetch(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted })) {
                 b.deleted = true
                 b.markDirty()
             }
@@ -143,7 +151,7 @@ public final class Repository {
     // MARK: Budgets
 
     public func setBudget(categoryId: UUID, monthlyLimitCents: Int?) throws {
-        let existing = fetch(FetchDescriptor<BudgetEntity>(
+        let existing = try fetch(FetchDescriptor<BudgetEntity>(
             predicate: #Predicate { $0.categoryId == categoryId && !$0.softDeleted })).first
         switch (existing, monthlyLimitCents) {
         case let (b?, limit?):
@@ -169,7 +177,7 @@ public final class Repository {
         if let message = draft.validationError() { throw RepositoryError.invalid(message) }
         let rule: RecurringRuleEntity
         if let id = draft.id {
-            guard let existing = fetch(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.id == id })).first
+            guard let existing = try fetch(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.id == id })).first
             else { throw RepositoryError.notFound }
             existing.amountCents = draft.amountCents
             existing.kind = draft.kind.rawValue
@@ -213,16 +221,28 @@ public final class Repository {
 
     // MARK: Intern
 
+    /// Bei Speicherfehler werden die ungespeicherten Änderungen verworfen, damit der Kontext
+    /// nicht in einem halb geänderten Zustand bleibt, den ein späteres `save()` mitschreiben würde.
     private func commit() throws {
-        try context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
         onChange()
     }
 
-    private func fetch<T: PersistentModel>(_ d: FetchDescriptor<T>) -> [T] {
-        (try? context.fetch(d)) ?? []
+    private func fetch<T: PersistentModel>(_ d: FetchDescriptor<T>) throws -> [T] {
+        try context.fetch(d)
     }
 
-    private func count<T: PersistentModel>(_ d: FetchDescriptor<T>) -> Int {
-        (try? context.fetchCount(d)) ?? 0
+    /// Nur für Lese-Methoden der UI: Fehler → leere Liste.
+    private func fetchOrEmpty<T: PersistentModel>(_ d: FetchDescriptor<T>) -> [T] {
+        (try? fetch(d)) ?? []
+    }
+
+    private func count<T: PersistentModel>(_ d: FetchDescriptor<T>) throws -> Int {
+        try context.fetchCount(d)
     }
 }
