@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { users } from '../src/db/schema.js'
+import { refreshTokens, users } from '../src/db/schema.js'
 import { createTestApp, login, setupAdmin } from './helpers.js'
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>
@@ -239,5 +239,114 @@ describe('/me and /users', () => {
     })
     expect(nf.statusCode).toBe(404)
     expect(nf.json().error.code).toBe('user_not_found')
+  })
+  test('admin deletes a member: login and refresh → 401, synced as deleted, hidden from GET /users', async () => {
+    const adminUser = await setupAdmin(t.app)
+    const admin = await login(t.app, 'admin', 'geheim123')
+    const member = await createMember(admin.accessToken)
+    const m = await login(t.app, 'anna', 'passwort1')
+    const [before] = await t.db.select().from(users).where(eq(users.id, member.id))
+
+    const res = await t.app.inject({
+      method: 'PATCH',
+      url: `/users/${member.id}`,
+      headers: auth(admin.accessToken),
+      payload: { deleted: true },
+    })
+    expect(res.statusCode, res.body).toBe(200)
+    expect(res.json()).toEqual(member)
+
+    const [after] = await t.db.select().from(users).where(eq(users.id, member.id))
+    expect(after!.deleted).toBe(true)
+    expect(Number(after!.version)).toBeGreaterThan(Number(before!.version))
+    expect(await t.db.select().from(refreshTokens).where(eq(refreshTokens.userId, member.id))).toEqual([])
+
+    const loginRes = await t.app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: 'anna', password: 'passwort1' },
+    })
+    expect(loginRes.statusCode).toBe(401)
+    const refresh = await t.app.inject({ method: 'POST', url: '/auth/refresh', payload: { refreshToken: m.refreshToken } })
+    expect(refresh.statusCode).toBe(401)
+
+    const list = await t.app.inject({ method: 'GET', url: '/users', headers: auth(admin.accessToken) })
+    expect(list.json().map((u: { id: string }) => u.id)).toEqual([adminUser.id])
+
+    const sync = await t.app.inject({
+      method: 'POST',
+      url: '/sync',
+      headers: auth(admin.accessToken),
+      payload: { lastVersion: Number(before!.version), changes: {} },
+    })
+    expect(sync.statusCode).toBe(200)
+    expect(sync.json().changes.users).toEqual([{ ...member, version: Number(after!.version), deleted: true }])
+
+    // Already deleted → 404; deleted: false (undelete) is not supported.
+    const again = await t.app.inject({
+      method: 'PATCH',
+      url: `/users/${member.id}`,
+      headers: auth(admin.accessToken),
+      payload: { deleted: true },
+    })
+    expect(again.statusCode).toBe(404)
+  })
+
+  test('deleted: false is a no-op on an active user', async () => {
+    await setupAdmin(t.app)
+    const admin = await login(t.app, 'admin', 'geheim123')
+    const member = await createMember(admin.accessToken)
+    const [before] = await t.db.select().from(users).where(eq(users.id, member.id))
+    const res = await t.app.inject({
+      method: 'PATCH',
+      url: `/users/${member.id}`,
+      headers: auth(admin.accessToken),
+      payload: { deleted: false },
+    })
+    expect(res.statusCode).toBe(200)
+    const [after] = await t.db.select().from(users).where(eq(users.id, member.id))
+    expect(after!.deleted).toBe(false)
+    expect(after!.version).toBe(before!.version)
+  })
+
+  test('admin cannot delete themselves; the last admin cannot be deleted', async () => {
+    const adminUser = await setupAdmin(t.app)
+    const admin = await login(t.app, 'admin', 'geheim123')
+    const self = await t.app.inject({
+      method: 'PATCH',
+      url: `/users/${adminUser.id}`,
+      headers: auth(admin.accessToken),
+      payload: { deleted: true },
+    })
+    expect(self.statusCode).toBe(409)
+    expect(self.json().error.code).toBe('cannot_delete_self')
+
+    // Anna becomes admin and demotes the original admin, whose access token still claims admin
+    // (no DB lookup per request) until it expires: that token must not delete the last admin.
+    const member = await createMember(admin.accessToken)
+    await t.app.inject({
+      method: 'PATCH',
+      url: `/users/${member.id}`,
+      headers: auth(admin.accessToken),
+      payload: { isAdmin: true },
+    })
+    const anna = await login(t.app, 'anna', 'passwort1')
+    const demote = await t.app.inject({
+      method: 'PATCH',
+      url: `/users/${adminUser.id}`,
+      headers: auth(anna.accessToken),
+      payload: { isAdmin: false },
+    })
+    expect(demote.statusCode).toBe(200)
+    const last = await t.app.inject({
+      method: 'PATCH',
+      url: `/users/${member.id}`,
+      headers: auth(admin.accessToken),
+      payload: { deleted: true },
+    })
+    expect(last.statusCode).toBe(409)
+    expect(last.json().error.code).toBe('last_admin')
+    const [row] = await t.db.select().from(users).where(eq(users.id, member.id))
+    expect(row!.deleted).toBe(false)
   })
 })

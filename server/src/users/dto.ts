@@ -15,7 +15,8 @@ export function toUserDto(row: UserDto): UserDto {
 
 export const usernameSchema = z.string().min(3).max(32).regex(/^[a-z0-9._-]+$/)
 export const displayNameSchema = z.string().min(1).max(50)
-export const passwordSchema = z.string().min(8)
+/** Max 1024 so a huge password cannot make argon2 hashing expensive. */
+export const passwordSchema = z.string().min(8).max(1024)
 
 /** Body for creating a user: used by `POST /setup` (first admin) and `POST /users`. */
 export const setupBody = z.object({

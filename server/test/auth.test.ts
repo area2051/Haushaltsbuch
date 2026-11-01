@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { decodeJwt } from 'jose'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { createLoginLimiter } from '../src/auth/loginLimiter.js'
+import { pruneExpiredRefreshTokens } from '../src/auth/tokens.js'
 import { hashPassword } from '../src/auth/passwords.js'
 import { refreshTokens, users } from '../src/db/schema.js'
 import { AppError } from '../src/errors.js'
@@ -155,6 +156,15 @@ describe('POST /auth/login', () => {
       expect((await login({ ...creds, password: 'falsch123' })).statusCode).toBe(401)
     }
     expect((await login()).statusCode).toBe(200)
+  })
+
+  test('username is case-insensitive; the lockout counts all spellings together', async () => {
+    await setupAdmin(t.app)
+    expect((await login({ ...creds, username: 'Admin' })).statusCode).toBe(200)
+    for (let i = 0; i < 5; i++) {
+      expect((await login({ username: i % 2 ? 'ADMIN' : 'Admin', password: 'falsch123' })).statusCode).toBe(401)
+    }
+    expect((await login()).statusCode).toBe(429)
   })
 
   test('missing fields → 400 validation_failed', async () => {
@@ -405,5 +415,22 @@ describe('createLoginLimiter', () => {
     clock.advance(60_000)
     limiter.fail('anna')
     expect(() => limiter.check('anna')).not.toThrow()
+  })
+})
+
+describe('pruneExpiredRefreshTokens', () => {
+  test('deletes only expired refresh tokens', async () => {
+    await setupAdmin(t.app)
+    const { refreshToken: first } = await loginOk()
+    t.clock.advance(24 * 60 * 60 * 1000)
+    const { refreshToken: newer } = await loginOk()
+    // First token expires exactly now (expires_at <= now counts as expired, like rotateRefreshToken).
+    t.clock.advance(90 * 24 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+    expect(await pruneExpiredRefreshTokens(t.db, t.clock.now())).toBe(1)
+    const rows = await t.db.select().from(refreshTokens)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.tokenHash).toBe(createHash('sha256').update(newer).digest('hex'))
+    expect(first).not.toBe(newer)
+    expect(await pruneExpiredRefreshTokens(t.db, t.clock.now())).toBe(0)
   })
 })

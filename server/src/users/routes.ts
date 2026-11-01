@@ -29,6 +29,14 @@ const patchUserBody = z.object({
   displayName: displayNameSchema.optional(),
   password: passwordSchema.optional().describe('Admin password reset; revokes all refresh tokens of the user.'),
   isAdmin: z.boolean().optional(),
+  deleted: z
+    .boolean()
+    .optional()
+    .describe(
+      'true removes the member: soft delete (synced as UserRecord.deleted), all refresh tokens revoked, login blocked. '
+        + 'Fails with 409 cannot_delete_self for the calling admin and 409 last_admin for the last admin. '
+        + 'false is ignored (no undelete); a deleted user yields 404.',
+    ),
 }).meta({ id: 'UpdateUserRequest' })
 
 const idParams = z.object({ id: z.string().uuid() })
@@ -168,6 +176,10 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const { displayName, password, isAdmin } = req.body
+      const deleting = req.body.deleted === true
+      if (deleting && req.params.id === req.user.id) {
+        throw new AppError(409, 'cannot_delete_self', 'Admins cannot delete themselves')
+      }
       const passwordHash = password !== undefined ? await hashPassword(password) : undefined
 
       const updated = await app.db.transaction(async (tx) => {
@@ -177,7 +189,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         const [target] = await tx.select().from(users).where(eq(users.id, req.params.id))
         if (!target || target.deleted) throw new AppError(404, 'user_not_found', 'User not found')
 
-        if (isAdmin === false && target.isAdmin) {
+        // Demoting or deleting an admin must leave at least one other active admin.
+        if ((isAdmin === false || deleting) && target.isAdmin) {
           const others = await tx
             .select({ id: users.id })
             .from(users)
@@ -190,6 +203,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         if (displayName !== undefined) changes.displayName = displayName
         if (passwordHash !== undefined) changes.passwordHash = passwordHash
         if (isAdmin !== undefined) changes.isAdmin = isAdmin
+        if (deleting) changes.deleted = true
         if (Object.keys(changes).length === 0) return target
 
         const [u] = await tx
@@ -197,7 +211,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
           .set({ ...changes, ...bump() })
           .where(eq(users.id, target.id))
           .returning()
-        if (passwordHash !== undefined) await revokeAllRefreshTokens(tx as unknown as Db, target.id)
+        if (passwordHash !== undefined || deleting) await revokeAllRefreshTokens(tx as unknown as Db, target.id)
         return u!
       })
       return toUserDto(updated)

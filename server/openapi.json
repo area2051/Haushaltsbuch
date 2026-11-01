@@ -42,8 +42,8 @@
             "type": "string"
           },
           "monthlyLimitCents": {
-            "maximum": 2147483647,
-            "minimum": 1,
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
             "type": "integer"
           },
           "version": {
@@ -54,10 +54,10 @@
         },
         "required": [
           "id",
+          "version",
           "deleted",
           "categoryId",
-          "monthlyLimitCents",
-          "version"
+          "monthlyLimitCents"
         ],
         "type": "object"
       },
@@ -117,14 +117,12 @@
             "type": "boolean"
           },
           "color": {
-            "pattern": "^#[0-9A-Fa-f]{6}$",
             "type": "string"
           },
           "deleted": {
             "type": "boolean"
           },
           "icon": {
-            "maxLength": 100,
             "type": "string"
           },
           "id": {
@@ -139,13 +137,11 @@
             "type": "string"
           },
           "name": {
-            "maxLength": 40,
-            "minLength": 1,
             "type": "string"
           },
           "sortOrder": {
-            "maximum": 2147483647,
-            "minimum": -2147483647,
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
             "type": "integer"
           },
           "version": {
@@ -156,14 +152,14 @@
         },
         "required": [
           "id",
+          "version",
           "deleted",
           "name",
           "icon",
           "color",
           "kind",
           "sortOrder",
-          "archived",
-          "version"
+          "archived"
         ],
         "type": "object"
       },
@@ -178,6 +174,7 @@
             "type": "boolean"
           },
           "password": {
+            "maxLength": 1024,
             "minLength": 8,
             "type": "string"
           },
@@ -359,8 +356,8 @@
       "RecurringRuleRecordOut": {
         "properties": {
           "amountCents": {
-            "maximum": 2147483647,
-            "minimum": 1,
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
             "type": "integer"
           },
           "categoryId": {
@@ -405,14 +402,9 @@
             "type": "string"
           },
           "note": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "paidBy": {
@@ -431,6 +423,7 @@
         },
         "required": [
           "id",
+          "version",
           "deleted",
           "amountCents",
           "kind",
@@ -440,7 +433,6 @@
           "frequency",
           "startDate",
           "endDate",
-          "version",
           "nextDueDate"
         ],
         "type": "object"
@@ -488,6 +480,7 @@
             "type": "string"
           },
           "password": {
+            "maxLength": 1024,
             "minLength": 8,
             "type": "string"
           },
@@ -716,8 +709,8 @@
       "TransactionRecordOut": {
         "properties": {
           "amountCents": {
-            "maximum": 2147483647,
-            "minimum": 1,
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
             "type": "integer"
           },
           "categoryId": {
@@ -743,14 +736,9 @@
             "type": "string"
           },
           "note": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "paidBy": {
@@ -776,6 +764,7 @@
         },
         "required": [
           "id",
+          "version",
           "deleted",
           "amountCents",
           "kind",
@@ -783,8 +772,7 @@
           "date",
           "note",
           "paidBy",
-          "recurringRuleId",
-          "version"
+          "recurringRuleId"
         ],
         "type": "object"
       },
@@ -806,6 +794,7 @@
           },
           "newPassword": {
             "description": "Requires a correct currentPassword.",
+            "maxLength": 1024,
             "minLength": 8,
             "type": "string"
           }
@@ -814,6 +803,10 @@
       },
       "UpdateUserRequest": {
         "properties": {
+          "deleted": {
+            "description": "true removes the member: soft delete (synced as UserRecord.deleted), all refresh tokens revoked, login blocked. Fails with 409 cannot_delete_self for the calling admin and 409 last_admin for the last admin. false is ignored (no undelete); a deleted user yields 404.",
+            "type": "boolean"
+          },
           "displayName": {
             "maxLength": 50,
             "minLength": 1,
@@ -824,6 +817,7 @@
           },
           "password": {
             "description": "Admin password reset; revokes all refresh tokens of the user.",
+            "maxLength": 1024,
             "minLength": 8,
             "type": "string"
           }
@@ -1307,6 +1301,16 @@
             "description": "Default Response"
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "413": {
             "content": {
               "application/json": {
                 "schema": {

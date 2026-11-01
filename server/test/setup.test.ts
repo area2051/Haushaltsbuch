@@ -1,9 +1,15 @@
 import { count, eq } from 'drizzle-orm'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { verifyPassword } from '../src/auth/passwords.js'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { hashPassword, verifyPassword } from '../src/auth/passwords.js'
 import { categories, users } from '../src/db/schema.js'
 import { DEFAULT_CATEGORIES } from '../src/setup/defaultCategories.js'
 import { createTestApp, setupAdmin } from './helpers.js'
+
+// Spy on hashPassword (real implementation) to check that /setup skips argon2 once setup is done.
+vi.mock('../src/auth/passwords.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../src/auth/passwords.js')>()
+  return { ...mod, hashPassword: vi.fn(mod.hashPassword) }
+})
 
 let t: Awaited<ReturnType<typeof createTestApp>>
 beforeEach(async () => {
@@ -54,6 +60,20 @@ describe('health and setup', () => {
     const res = await t.app.inject({ method: 'POST', url: '/setup', payload: { ...body, username: 'other' } })
     expect(res.statusCode).toBe(409)
     expect(res.json().error.code).toBe('setup_already_done')
+  })
+
+  test('setup after setup is done → 409 without hashing the password', async () => {
+    await setupAdmin(t.app)
+    vi.mocked(hashPassword).mockClear()
+    const res = await t.app.inject({ method: 'POST', url: '/setup', payload: { ...body, username: 'other' } })
+    expect(res.statusCode).toBe(409)
+    expect(hashPassword).not.toHaveBeenCalled()
+  })
+
+  test('setup rejects passwords longer than 1024 characters', async () => {
+    const res = await t.app.inject({ method: 'POST', url: '/setup', payload: { ...body, password: 'x'.repeat(1025) } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe('validation_failed')
   })
 
   test('concurrent setup calls create exactly one user', async () => {

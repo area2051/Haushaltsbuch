@@ -39,7 +39,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const { username, password, deviceName } = req.body
+      // Usernames are stored lowercase ([a-z0-9._-]); the limiter key uses the same spelling.
+      const username = req.body.username.toLowerCase()
+      const { password, deviceName } = req.body
       limiter.check(username)
 
       let user: typeof users.$inferSelect | undefined

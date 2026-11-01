@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { todayIn } from '../src/clock.js'
-import { categories, recurringRules, transactions } from '../src/db/schema.js'
+import { categories, recurringRules, refreshTokens, transactions } from '../src/db/schema.js'
 import { generateDueTransactions } from '../src/recurring/generator.js'
 import { startScheduler } from '../src/recurring/scheduler.js'
 import { createTestApp, login, setupAdmin } from './helpers.js'
@@ -170,7 +170,7 @@ describe('startScheduler', () => {
     await t?.close()
   })
 
-  test('runs once immediately, uses clock/time zone, and stops; errors are logged', async () => {
+  test('runs once immediately (generation + refresh-token pruning), uses clock/time zone, and stops; errors are logged', async () => {
     t = await createTestApp({ now: '2026-10-31T23:30:00Z' })
     const admin = await setupAdmin(t.app)
     const [cat] = await t.db.select().from(categories).limit(1)
@@ -186,6 +186,11 @@ describe('startScheduler', () => {
         nextDueDate: '2026-11-01',
       })
       .returning()
+    const now = t.clock.now().getTime()
+    await t.db.insert(refreshTokens).values([
+      { userId: admin.id, tokenHash: 'expired', expiresAt: new Date(now - 1000) },
+      { userId: admin.id, tokenHash: 'valid', expiresAt: new Date(now + 60_000) },
+    ])
     const handle = startScheduler(t.db, t.clock, 'Europe/Berlin')
     try {
       await vi.waitFor(async () => {
@@ -194,6 +199,8 @@ describe('startScheduler', () => {
           .from(transactions)
           .where(and(eq(transactions.recurringRuleId, rule!.id)))
         expect(rows).toHaveLength(1)
+        const tokens = await t.db.select({ tokenHash: refreshTokens.tokenHash }).from(refreshTokens)
+        expect(tokens).toEqual([{ tokenHash: 'valid' }])
       })
     } finally {
       handle.stop()
@@ -204,7 +211,8 @@ describe('startScheduler', () => {
     const broken = { ...t.db, transaction: () => Promise.reject(new Error('boom')) } as unknown as typeof t.db
     const h2 = startScheduler(broken, t.clock, 'Europe/Berlin', { error: (o) => logged.push(o) })
     try {
-      await vi.waitFor(() => expect(logged).toHaveLength(1))
+      // Both jobs fail on the broken db; one failure does not skip the other.
+      await vi.waitFor(() => expect(logged).toHaveLength(2))
     } finally {
       h2.stop()
     }

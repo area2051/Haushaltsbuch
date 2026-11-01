@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, lte } from 'drizzle-orm'
 import { jwtVerify, SignJWT } from 'jose'
 import type { Clock } from '../clock.js'
 import type { Db } from '../db/client.js'
@@ -111,4 +111,16 @@ export async function revokeRefreshToken(db: Db, userId: string, token: string):
   await db
     .delete(refreshTokens)
     .where(and(eq(refreshTokens.tokenHash, hashRefreshToken(token)), eq(refreshTokens.userId, userId)))
+}
+
+/**
+ * Deletes refresh tokens that expired at or before `now` (same rule as `rotateRefreshToken`).
+ * Called by the daily scheduler tick. Returns the number of deleted tokens.
+ */
+export async function pruneExpiredRefreshTokens(db: Db, now: Date): Promise<number> {
+  const deleted = await db
+    .delete(refreshTokens)
+    .where(lte(refreshTokens.expiresAt, now))
+    .returning({ id: refreshTokens.id })
+  return deleted.length
 }
