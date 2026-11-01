@@ -42,7 +42,9 @@ export const users = pgTable(
   (t) => [index('users_version_idx').on(t.version)],
 )
 
-export const refreshTokens = pgTable('refresh_tokens', {
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
     .notNull()
@@ -51,7 +53,9 @@ export const refreshTokens = pgTable('refresh_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   deviceName: text('device_name'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+  },
+  (t) => [index('refresh_tokens_token_hash_idx').on(t.tokenHash)],
+)
 
 export const categories = pgTable(
   'categories',

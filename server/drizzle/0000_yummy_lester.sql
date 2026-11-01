@@ -92,6 +92,7 @@ CREATE INDEX "budgets_version_idx" ON "budgets" USING btree ("version");--> stat
 CREATE UNIQUE INDEX "budgets_category_active_uq" ON "budgets" USING btree ("category_id") WHERE NOT "budgets"."deleted";--> statement-breakpoint
 CREATE INDEX "categories_version_idx" ON "categories" USING btree ("version");--> statement-breakpoint
 CREATE INDEX "recurring_rules_version_idx" ON "recurring_rules" USING btree ("version");--> statement-breakpoint
+CREATE INDEX "refresh_tokens_token_hash_idx" ON "refresh_tokens" USING btree ("token_hash");--> statement-breakpoint
 CREATE INDEX "transactions_version_idx" ON "transactions" USING btree ("version");--> statement-breakpoint
 CREATE UNIQUE INDEX "transactions_rule_date_uq" ON "transactions" USING btree ("recurring_rule_id","date") WHERE "transactions"."recurring_rule_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "users_version_idx" ON "users" USING btree ("version");
