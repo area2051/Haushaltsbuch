@@ -5,14 +5,8 @@ import { z } from 'zod'
 import { hashPassword } from '../auth/passwords.js'
 import { categories, users } from '../db/schema.js'
 import { AppError } from '../errors.js'
-import { toUserDto, userDto } from '../users/dto.js'
+import { setupBody, toUserDto, userDto } from '../users/dto.js'
 import { DEFAULT_CATEGORIES } from './defaultCategories.js'
-
-const setupBody = z.object({
-  username: z.string().min(3).max(32).regex(/^[a-z0-9._-]+$/),
-  displayName: z.string().min(1).max(50),
-  password: z.string().min(8),
-})
 
 export async function setupRoutes(app: FastifyInstance): Promise<void> {
   const r = app.withTypeProvider<ZodTypeProvider>()

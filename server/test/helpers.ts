@@ -71,3 +71,14 @@ export async function setupAdmin(
   if (res.statusCode !== 201) throw new Error(`setup failed: ${res.statusCode} ${res.body}`)
   return res.json().user as UserDto
 }
+
+export async function login(
+  app: FastifyInstance,
+  username: string,
+  password: string,
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const res = await app.inject({ method: 'POST', url: '/auth/login', payload: { username, password } })
+  if (res.statusCode !== 200) throw new Error(`login failed: ${res.statusCode} ${res.body}`)
+  const { accessToken, refreshToken } = res.json() as { accessToken: string; refreshToken: string }
+  return { accessToken, refreshToken }
+}

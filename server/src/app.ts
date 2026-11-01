@@ -8,6 +8,7 @@ import type { Config } from './config.js'
 import type { Db } from './db/client.js'
 import { errorHandler, notFoundHandler } from './errors.js'
 import { setupRoutes } from './setup/routes.js'
+import { userRoutes } from './users/routes.js'
 
 export type AppDeps = {
   config: Config
@@ -32,6 +33,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(setupRoutes)
   await app.register(authRoutes)
+  await app.register(userRoutes)
 
   return app
 }
