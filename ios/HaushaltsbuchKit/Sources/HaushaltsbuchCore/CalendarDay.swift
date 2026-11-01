@@ -34,14 +34,20 @@ public struct CalendarDay: Hashable, Comparable, Sendable, Codable {
 
     /// „Heute“ in der Zeitzone des übergebenen Kalenders.
     public static func today(calendar: Calendar = .current, now: Date = Date()) -> CalendarDay {
-        let c = calendar.dateComponents([.year, .month, .day], from: now)
+        let c = gregorian(timeZone: calendar.timeZone).dateComponents([.year, .month, .day], from: now)
         return CalendarDay(year: c.year!, month: c.month!, day: c.day!)!
+    }
+
+    /// Gregorianischer Kalender in der Zeitzone des Geräte-Kalenders (unabhängig von dessen Kalendersystem).
+    private static func gregorian(timeZone: TimeZone) -> Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        return cal
     }
 
     /// Verschiebt um ganze Tage (negativ = zurück).
     public func adding(days: Int, calendar: Calendar = Calendar(identifier: .gregorian)) -> CalendarDay {
-        var cal = calendar
-        cal.timeZone = TimeZone(identifier: "UTC")!
+        let cal = Self.gregorian(timeZone: calendar.timeZone)
         let base = cal.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
         let moved = cal.date(byAdding: .day, value: days, to: base)!
         let c = cal.dateComponents([.year, .month, .day], from: moved)

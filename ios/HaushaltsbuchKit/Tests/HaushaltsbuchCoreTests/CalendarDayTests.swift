@@ -61,3 +61,12 @@ import Testing
     #expect(!m.contains(CalendarDay(year: 2026, month: 3, day: 1)!))
     #expect(!m.contains(CalendarDay(year: 2025, month: 2, day: 1)!))
 }
+
+@Test func todayAndAddingAreGregorianRegardlessOfDeviceCalendar() {
+    var buddhist = Calendar(identifier: .buddhist)
+    buddhist.timeZone = TimeZone(identifier: "UTC")!
+    let now = Date(timeIntervalSince1970: 1_793_532_000) // 2026-11-01 11:20 UTC
+    let today = CalendarDay.today(calendar: buddhist, now: now)
+    #expect(today == CalendarDay(year: 2026, month: 11, day: 1))
+    #expect(today.adding(days: 30, calendar: buddhist) == CalendarDay(year: 2026, month: 12, day: 1))
+}
