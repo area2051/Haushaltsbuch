@@ -21,6 +21,22 @@ public struct StoredSession: Codable, Sendable, Hashable {
     }
 }
 
+/// Beschreibungen ohne Tokens (Logs, `print`, `dump`, Testausgaben).
+extension StoredSession: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String {
+        "StoredSession(serverURL: \(serverURL), userId: \(userId), username: \(username), isAdmin: \(isAdmin), tokens: <redacted>)"
+    }
+
+    public var debugDescription: String { description }
+
+    public var customMirror: Mirror {
+        Mirror(self, children: [
+            "serverURL": serverURL, "accessToken": "<redacted>", "refreshToken": "<redacted>",
+            "userId": userId, "username": username, "isAdmin": isAdmin,
+        ], displayStyle: .struct)
+    }
+}
+
 /// Persistenz der Sitzung. `save(nil)` löscht sie.
 public protocol TokenStore: Sendable {
     func load() -> StoredSession?

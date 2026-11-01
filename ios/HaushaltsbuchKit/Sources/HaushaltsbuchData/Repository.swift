@@ -126,11 +126,14 @@ public final class Repository {
         let txCount = try count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted }))
         let ruleCount = try count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted }))
         let used = txCount > 0 || ruleCount > 0
+        // Alle Lesezugriffe vor der ersten Änderung: wirft einer, bleibt der Kontext unverändert.
+        let budgets = used ? [] : try fetch(FetchDescriptor<BudgetEntity>(
+            predicate: #Predicate { $0.categoryId == id && !$0.softDeleted }))
         if used {
             c.archived = true
         } else {
             c.deleted = true
-            for b in try fetch(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted })) {
+            for b in budgets {
                 b.deleted = true
                 b.markDirty()
             }

@@ -248,3 +248,37 @@ func keychainStoreRoundTrip() throws {
     store.save(nil)
     #expect(store.load() == nil)
 }
+
+@MainActor @Test func reloginDiscardsRefreshOfPreviousSession() async throws {
+    let f = ServiceFixture(session: Fixtures.session())
+    let oldClient = try #require(f.auth.client)
+    // Alte Sitzung: getMe → 401 → Refresh hängt, bis die neue Anmeldung durch ist.
+    // (Zweite Antwort nur für den Fall, dass der alte Refresh fälschlich übernommen wird.)
+    f.transport.enqueue("getMe", .error(401, code: "unauthorized"), Fixtures.meOK)
+    let gate = Gate(count: 2)
+    f.transport.respond("refresh") { _ in
+        await gate.arrive()
+        return Fixtures.tokens(access: "a-old2", refresh: "r-old2")
+    }
+    let pending = Task { try? await oldClient.getMe() }
+    while f.transport.requests("refresh").isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+
+    f.transport.enqueue("login", Fixtures.loginOK(access: "a9", refresh: "r9"))
+    try await f.auth.login(username: "anna", password: "geheim123")
+    await gate.arrive()
+    _ = await pending.value
+
+    #expect(f.store.load() == Fixtures.session(access: "a9", refresh: "r9"))
+    #expect(f.auth.state == .loggedIn(Fixtures.session(access: "a9", refresh: "r9")))
+}
+
+@Test func storedSessionDescriptionsRedactTokens() {
+    let s = Fixtures.session(access: "SECRET-ACCESS", refresh: "SECRET-REFRESH")
+    var dumped = ""
+    dump(s, to: &dumped)
+    for text in [String(describing: s), String(reflecting: s), "\(AuthState.loggedIn(s))",
+                 String(reflecting: AuthState.loggedIn(s)), dumped] {
+        #expect(!text.contains("SECRET"), "\(text)")
+        #expect(text.contains("anna"))
+    }
+}

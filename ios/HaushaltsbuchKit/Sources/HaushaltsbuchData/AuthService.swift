@@ -132,6 +132,13 @@ public final class AuthService {
         let session = StoredSession(serverURL: url, accessToken: response.accessToken,
                                     refreshToken: response.refreshToken, userId: userId,
                                     username: response.user.username, isAdmin: response.user.isAdmin)
+        // Anmeldung bei bestehender Sitzung: den alten Refresher zuerst stilllegen. Sonst könnte sein
+        // noch laufender Refresh danach die neue Sitzung im Store mit den alten Tokens überschreiben.
+        if let old = refresher {
+            refresherID = UUID()
+            refresher = nil
+            await old.clear()
+        }
         store.save(session)
         defaults.set(url, forKey: Self.lastServerURLKey)
         defaults.set(response.user.username, forKey: Self.lastUsernameKey)
