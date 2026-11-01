@@ -33,7 +33,7 @@ export const categoryRecord = z.object({
   kind,
   sortOrder: z.number().int().min(-INT32_MAX).max(INT32_MAX),
   archived: z.boolean(),
-})
+}).meta({ id: 'CategoryRecord' })
 
 export const transactionRecord = z.object({
   ...base,
@@ -44,13 +44,13 @@ export const transactionRecord = z.object({
   note,
   paidBy: id,
   recurringRuleId: id.nullable(),
-})
+}).meta({ id: 'TransactionRecord' })
 
 export const budgetRecord = z.object({
   ...base,
   categoryId: id,
   monthlyLimitCents: z.number().int().min(1).max(INT32_MAX),
-})
+}).meta({ id: 'BudgetRecord' })
 
 const recurringRuleShape = z.object({
   ...base,
@@ -64,10 +64,12 @@ const recurringRuleShape = z.object({
   endDate: calendarDate.nullable(),
 })
 
-export const recurringRuleRecord = recurringRuleShape.refine(
-  (r) => r.endDate === null || r.endDate >= r.startDate,
-  { message: 'must be on or after startDate', path: ['endDate'] },
-)
+export const recurringRuleRecord = recurringRuleShape
+  .refine((r) => r.endDate === null || r.endDate >= r.startDate, {
+    message: 'must be on or after startDate',
+    path: ['endDate'],
+  })
+  .meta({ id: 'RecurringRuleRecord' })
 
 export type CategoryRecord = z.infer<typeof categoryRecord>
 export type TransactionRecord = z.infer<typeof transactionRecord>
@@ -78,15 +80,17 @@ export type RecurringRuleRecord = z.infer<typeof recurringRuleRecord>
 
 const version = z.number().int()
 
-export const categoryRecordOut = categoryRecord.extend({ version })
-export const transactionRecordOut = transactionRecord.extend({ version })
-export const budgetRecordOut = budgetRecord.extend({ version })
-export const recurringRuleRecordOut = recurringRuleShape.extend({ version, nextDueDate: calendarDate })
+export const categoryRecordOut = categoryRecord.extend({ version }).meta({ id: 'CategoryRecordOut' })
+export const transactionRecordOut = transactionRecord.extend({ version }).meta({ id: 'TransactionRecordOut' })
+export const budgetRecordOut = budgetRecord.extend({ version }).meta({ id: 'BudgetRecordOut' })
+export const recurringRuleRecordOut = recurringRuleShape
+  .extend({ version, nextDueDate: calendarDate })
+  .meta({ id: 'RecurringRuleRecordOut' })
 /**
  * UserDto plus sync fields. `deleted` is included because the spec requires deleted users
  * to be synced as well (otherwise a client could not tell that a member was removed).
  */
-export const userRecord = userDto.extend({ version, deleted: z.boolean() })
+export const userRecord = userDto.extend({ version, deleted: z.boolean() }).meta({ id: 'UserRecord' })
 
 export type UserRecord = z.infer<typeof userRecord>
 
@@ -104,7 +108,7 @@ export const syncRequest = z.object({
     budgets: z.array(budgetRecord).optional(),
     recurringRules: z.array(recurringRuleRecord).optional(),
   }),
-})
+}).meta({ id: 'SyncRequest' })
 
 /**
  * What the route actually validates: only the envelope. Records stay `unknown` and are parsed
@@ -129,7 +133,7 @@ export const rejectedRecord = z.object({
   table: z.string(),
   id: z.string().nullable(),
   reason: z.string(),
-})
+}).meta({ id: 'RejectedRecord' })
 
 export const syncChanges = z.object({
   categories: z.array(categoryRecordOut),
@@ -137,14 +141,14 @@ export const syncChanges = z.object({
   budgets: z.array(budgetRecordOut),
   recurringRules: z.array(recurringRuleRecordOut),
   users: z.array(userRecord),
-})
+}).meta({ id: 'SyncChanges' })
 
 export const syncResponse = z.object({
   currentVersion: z.number().int(),
   fullResync: z.boolean(),
   changes: syncChanges,
   rejected: z.array(rejectedRecord),
-})
+}).meta({ id: 'SyncResponse' })
 
 export type SyncChanges = z.infer<typeof syncChanges>
 export type SyncResponse = z.infer<typeof syncResponse>

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { hashPassword } from '../auth/passwords.js'
 import { LOCK_SETUP, LOCK_SYNC, lock } from '../db/locks.js'
 import { categories, users } from '../db/schema.js'
-import { AppError } from '../errors.js'
+import { AppError, errorResponses } from '../errors.js'
 import { setupBody, toUserDto, userDto } from '../users/dto.js'
 import { DEFAULT_CATEGORIES } from './defaultCategories.js'
 
@@ -14,7 +14,16 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
 
   r.get(
     '/health',
-    { schema: { response: { 200: z.object({ status: z.literal('ok'), setupRequired: z.boolean() }) } } },
+    {
+      schema: {
+        operationId: 'getHealth',
+        security: [],
+        response: {
+          200: z.object({ status: z.literal('ok'), setupRequired: z.boolean() }).meta({ id: 'HealthResponse' }),
+          ...errorResponses(),
+        },
+      },
+    },
     async () => {
       const [row] = await app.db.select({ n: count() }).from(users)
       return { status: 'ok' as const, setupRequired: (row?.n ?? 0) === 0 }
@@ -23,7 +32,17 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
 
   r.post(
     '/setup',
-    { schema: { body: setupBody, response: { 201: z.object({ user: userDto }) } } },
+    {
+      schema: {
+        operationId: 'setup',
+        security: [],
+        body: setupBody,
+        response: {
+          201: z.object({ user: userDto }).meta({ id: 'SetupResponse' }),
+          ...errorResponses(400, 409),
+        },
+      },
+    },
     async (req, reply) => {
       const { username, displayName, password } = req.body
       const passwordHash = await hashPassword(password)

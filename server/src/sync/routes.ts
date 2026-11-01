@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod'
 import type { z } from 'zod'
+import { errorResponses } from '../errors.js'
 import { todayIn } from '../clock.js'
 import { syncRequest, type SyncRequest, syncRequestEnvelope, syncResponse } from './schemas.js'
 import { applySync, pullLocked } from './service.js'
@@ -18,7 +19,12 @@ export async function syncRoutes(app: FastifyInstance, opts: SyncRoutesOptions):
     {
       onRequest: app.authenticate,
       // `body` is the fully typed SyncRequest so OpenAPI documents typed record arrays...
-      schema: { body: syncRequest, response: { 200: syncResponse } },
+      schema: {
+        operationId: 'sync',
+        security: [{ bearerAuth: [] }],
+        body: syncRequest,
+        response: { 200: syncResponse, ...errorResponses(400, 401) },
+      },
       // ...but validation only checks the envelope; records are parsed one by one in applySync
       // so a single invalid record is rejected alone (spec §4).
       validatorCompiler: (route) =>

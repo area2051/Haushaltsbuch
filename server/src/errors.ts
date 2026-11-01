@@ -1,5 +1,18 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify'
 import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod'
+import { z } from 'zod'
+
+/** Error envelope returned for every non-2xx response. */
+export const errorResponse = z
+  .object({ error: z.object({ code: z.string(), message: z.string() }) })
+  .meta({ id: 'ErrorResponse' })
+
+/** Documents error responses (plus 500) of a route: `response: { 200: x, ...errorResponses(400, 401) }`. */
+export function errorResponses<C extends number>(...codes: C[]): Record<C | 500, typeof errorResponse> {
+  const out = { 500: errorResponse } as Record<number, typeof errorResponse>
+  for (const c of codes) out[c] = errorResponse
+  return out as Record<C | 500, typeof errorResponse>
+}
 
 export class AppError extends Error {
   constructor(

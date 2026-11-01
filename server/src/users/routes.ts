@@ -7,7 +7,7 @@ import { hashRefreshToken } from '../auth/tokens.js'
 import type { Db } from '../db/client.js'
 import { LOCK_SYNC, LOCK_USERS, lock } from '../db/locks.js'
 import { refreshTokens, users } from '../db/schema.js'
-import { AppError } from '../errors.js'
+import { AppError, errorResponses } from '../errors.js'
 import { displayNameSchema, passwordSchema, setupBody, toUserDto, userDto } from './dto.js'
 
 const patchMeBody = z.object({
@@ -21,15 +21,15 @@ const patchMeBody = z.object({
     .describe(
       'When changing the password, all of the user\'s refresh tokens are revoked except this one (if it belongs to the user). Omit to revoke all.',
     ),
-})
+}).meta({ id: 'UpdateMeRequest' })
 
-const createUserBody = setupBody.extend({ isAdmin: z.boolean().optional() })
+const createUserBody = setupBody.extend({ isAdmin: z.boolean().optional() }).meta({ id: 'CreateUserRequest' })
 
 const patchUserBody = z.object({
   displayName: displayNameSchema.optional(),
   password: passwordSchema.optional().describe('Admin password reset; revokes all refresh tokens of the user.'),
   isAdmin: z.boolean().optional(),
-})
+}).meta({ id: 'UpdateUserRequest' })
 
 const idParams = z.object({ id: z.string().uuid() })
 
@@ -50,15 +50,34 @@ async function revokeAllRefreshTokens(db: Db, userId: string, keepToken?: string
 export async function userRoutes(app: FastifyInstance): Promise<void> {
   const r = app.withTypeProvider<ZodTypeProvider>()
 
-  r.get('/me', { onRequest: app.authenticate, schema: { response: { 200: userDto } } }, async (req) => {
-    const [row] = await app.db.select().from(users).where(eq(users.id, req.user.id))
-    if (!row || row.deleted) throw new AppError(401, 'unauthorized', 'User no longer exists')
-    return toUserDto(row)
-  })
+  r.get(
+    '/me',
+    {
+      onRequest: app.authenticate,
+      schema: {
+        operationId: 'getMe',
+        security: [{ bearerAuth: [] }],
+        response: { 200: userDto, ...errorResponses(401) },
+      },
+    },
+    async (req) => {
+      const [row] = await app.db.select().from(users).where(eq(users.id, req.user.id))
+      if (!row || row.deleted) throw new AppError(401, 'unauthorized', 'User no longer exists')
+      return toUserDto(row)
+    },
+  )
 
   r.patch(
     '/me',
-    { onRequest: app.authenticate, schema: { body: patchMeBody, response: { 200: userDto } } },
+    {
+      onRequest: app.authenticate,
+      schema: {
+        operationId: 'updateMe',
+        security: [{ bearerAuth: [] }],
+        body: patchMeBody,
+        response: { 200: userDto, ...errorResponses(400, 401) },
+      },
+    },
     async (req) => {
       const { displayName, currentPassword, newPassword, keepRefreshToken } = req.body
       const [row] = await app.db.select().from(users).where(eq(users.id, req.user.id))
@@ -90,7 +109,14 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   r.get(
     '/users',
-    { onRequest: [app.authenticate, app.requireAdmin], schema: { response: { 200: z.array(userDto) } } },
+    {
+      onRequest: [app.authenticate, app.requireAdmin],
+      schema: {
+        operationId: 'listUsers',
+        security: [{ bearerAuth: [] }],
+        response: { 200: z.array(userDto), ...errorResponses(401, 403) },
+      },
+    },
     async () => {
       const rows = await app.db.select().from(users).where(eq(users.deleted, false)).orderBy(users.createdAt)
       return rows.map(toUserDto)
@@ -101,7 +127,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     '/users',
     {
       onRequest: [app.authenticate, app.requireAdmin],
-      schema: { body: createUserBody, response: { 201: userDto } },
+      schema: {
+        operationId: 'createUser',
+        security: [{ bearerAuth: [] }],
+        body: createUserBody,
+        response: { 201: userDto, ...errorResponses(400, 401, 403, 409) },
+      },
     },
     async (req, reply) => {
       const { username, displayName, password, isAdmin } = req.body
@@ -127,7 +158,13 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     '/users/:id',
     {
       onRequest: [app.authenticate, app.requireAdmin],
-      schema: { params: idParams, body: patchUserBody, response: { 200: userDto } },
+      schema: {
+        operationId: 'updateUser',
+        security: [{ bearerAuth: [] }],
+        params: idParams,
+        body: patchUserBody,
+        response: { 200: userDto, ...errorResponses(400, 401, 403, 404, 409) },
+      },
     },
     async (req) => {
       const { displayName, password, isAdmin } = req.body

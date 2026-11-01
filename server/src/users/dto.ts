@@ -5,7 +5,7 @@ export const userDto = z.object({
   username: z.string(),
   displayName: z.string(),
   isAdmin: z.boolean(),
-})
+}).meta({ id: 'UserDto' })
 
 export type UserDto = z.infer<typeof userDto>
 
@@ -22,4 +22,4 @@ export const setupBody = z.object({
   username: usernameSchema,
   displayName: displayNameSchema,
   password: passwordSchema,
-})
+}).meta({ id: 'SetupRequest' })

@@ -1,11 +1,18 @@
+import fastifySwagger from '@fastify/swagger'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod'
+import {
+  jsonSchemaTransform,
+  jsonSchemaTransformObject,
+  serializerCompiler,
+  validatorCompiler,
+} from 'fastify-type-provider-zod'
 import { registerAuth } from './auth/plugin.js'
 import { authRoutes } from './auth/routes.js'
 import type { Clock } from './clock.js'
 import { systemClock, todayIn } from './clock.js'
 import type { Config } from './config.js'
 import type { Db } from './db/client.js'
+import { collapseInputSchemas } from './openapi/dedupe.js'
 import { errorHandler, notFoundHandler } from './errors.js'
 import { generateDueTransactions } from './recurring/generator.js'
 import { setupRoutes } from './setup/routes.js'
@@ -32,6 +39,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.decorate('config', deps.config)
   app.decorate('clock', clock)
   app.decorate('db', deps.db)
+
+  // Documentation only: no UI and no routes are added. Must be registered before the routes.
+  await app.register(fastifySwagger, {
+    openapi: {
+      openapi: '3.1.0',
+      servers: [{ url: '/' }],
+      info: { title: 'Haushaltsbuch API', version: '0.1.0' },
+      components: {
+        securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
+      },
+    },
+    transform: jsonSchemaTransform,
+    transformObject: (doc) => collapseInputSchemas(jsonSchemaTransformObject(doc)),
+  })
 
   registerAuth(app)
 

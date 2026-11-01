@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { users } from '../db/schema.js'
-import { AppError } from '../errors.js'
+import { AppError, errorResponses } from '../errors.js'
 import { toUserDto, userDto } from '../users/dto.js'
 import { createLoginLimiter } from './loginLimiter.js'
 import { hashPassword, verifyPassword } from './passwords.js'
@@ -13,11 +13,11 @@ const loginBody = z.object({
   username: z.string().min(1).max(64),
   password: z.string().min(1).max(1024),
   deviceName: z.string().max(100).optional(),
-})
+}).meta({ id: 'LoginRequest' })
 
-const refreshBody = z.object({ refreshToken: z.string().min(1).max(256) })
+const refreshBody = z.object({ refreshToken: z.string().min(1).max(256) }).meta({ id: 'RefreshRequest' })
 
-const tokenPair = z.object({ accessToken: z.string(), refreshToken: z.string() })
+const tokenPair = z.object({ accessToken: z.string(), refreshToken: z.string() }).meta({ id: 'TokenPair' })
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   const r = app.withTypeProvider<ZodTypeProvider>()
@@ -27,7 +27,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   r.post(
     '/auth/login',
-    { schema: { body: loginBody, response: { 200: tokenPair.extend({ user: userDto }) } } },
+    {
+      schema: {
+        operationId: 'login',
+        security: [],
+        body: loginBody,
+        response: {
+          200: tokenPair.extend({ user: userDto }).meta({ id: 'LoginResponse' }),
+          ...errorResponses(400, 401, 429),
+        },
+      },
+    },
     async (req) => {
       const { username, password, deviceName } = req.body
       limiter.check(username)
@@ -57,16 +67,35 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  r.post('/auth/refresh', { schema: { body: refreshBody, response: { 200: tokenPair } } }, async (req) => {
+  r.post(
+    '/auth/refresh',
+    {
+      schema: {
+        operationId: 'refresh',
+        security: [],
+        body: refreshBody,
+        response: { 200: tokenPair, ...errorResponses(400, 401) },
+      },
+    },
+    async (req) => {
     const rotated = await rotateRefreshToken(app.db, app.clock, req.body.refreshToken)
     if (!rotated) throw new AppError(401, 'invalid_refresh_token', 'Refresh token is invalid or expired')
     const accessToken = await signAccessToken(app.config.jwtSecret, app.clock, rotated.user)
     return { accessToken, refreshToken: rotated.refreshToken }
-  })
+    },
+  )
 
   r.post(
     '/auth/logout',
-    { onRequest: app.authenticate, schema: { body: refreshBody, response: { 204: z.null() } } },
+    {
+      onRequest: app.authenticate,
+      schema: {
+        operationId: 'logout',
+        security: [{ bearerAuth: [] }],
+        body: refreshBody,
+        response: { 204: z.null().describe('Logged out'), ...errorResponses(400, 401) },
+      },
+    },
     async (req, reply) => {
       await revokeRefreshToken(app.db, req.user.id, req.body.refreshToken)
       return reply.status(204).send(null)
