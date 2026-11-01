@@ -11,3 +11,7 @@ xcuserdata/
 DerivedData/
 *.xcuserstate
 build/
+
+# Docker Compose bind mounts
+data/
+backups/
