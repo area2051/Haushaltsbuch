@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { hashPassword } from '../auth/passwords.js'
-import { LOCK_SETUP, lock } from '../db/locks.js'
+import { LOCK_SETUP, LOCK_SYNC, lock } from '../db/locks.js'
 import { categories, users } from '../db/schema.js'
 import { AppError } from '../errors.js'
 import { setupBody, toUserDto, userDto } from '../users/dto.js'
@@ -29,6 +29,7 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       const passwordHash = await hashPassword(password)
       const user = await app.db.transaction(async (tx) => {
         await lock(tx, LOCK_SETUP)
+        await lock(tx, LOCK_SYNC)
         const [row] = await tx.select({ n: count() }).from(users)
         if ((row?.n ?? 0) > 0) {
           throw new AppError(409, 'setup_already_done', 'Setup has already been completed')

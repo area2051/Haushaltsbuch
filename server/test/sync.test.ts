@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { afterEach, describe, expect, test } from 'vitest'
-import { categories, recurringRules, transactions, users } from '../src/db/schema.js'
+import { budgets, categories, recurringRules, transactions, users } from '../src/db/schema.js'
 import { createTestApp, login, setupAdmin } from './helpers.js'
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>
@@ -262,6 +262,22 @@ describe('POST /sync', () => {
     })
     expect(r.rejected).toEqual([])
     const [row] = await t.db.select().from(categories).where(eq(categories.id, cat.id))
+    expect(row!.deleted).toBe(true)
+  })
+
+  test('deleting a category soft-deletes its active budgets', async () => {
+    const { token } = await start()
+    const first = await sync(token, 0)
+    const { version: _v, ...cat } = first.changes.categories[0]!
+    const budget = { id: randomUUID(), deleted: false, categoryId: cat.id, monthlyLimitCents: 30000 }
+    const withBudget = await sync(token, first.currentVersion, { budgets: [budget] })
+    expect(withBudget.rejected).toEqual([])
+
+    const r = await sync(token, withBudget.currentVersion, { categories: [{ ...cat, deleted: true }] })
+    expect(r.rejected).toEqual([])
+    expect(r.changes.categories).toEqual([expect.objectContaining({ id: cat.id, deleted: true })])
+    expect(r.changes.budgets).toEqual([{ ...budget, deleted: true, version: expect.any(Number) }])
+    const [row] = await t.db.select().from(budgets).where(eq(budgets.id, budget.id))
     expect(row!.deleted).toBe(true)
   })
 

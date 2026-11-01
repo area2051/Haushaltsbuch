@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { hashPassword, verifyPassword } from '../auth/passwords.js'
 import { hashRefreshToken } from '../auth/tokens.js'
 import type { Db } from '../db/client.js'
-import { LOCK_USERS, lock } from '../db/locks.js'
+import { LOCK_SYNC, LOCK_USERS, lock } from '../db/locks.js'
 import { refreshTokens, users } from '../db/schema.js'
 import { AppError } from '../errors.js'
 import { displayNameSchema, passwordSchema, setupBody, toUserDto, userDto } from './dto.js'
@@ -75,6 +75,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       if (Object.keys(changes).length === 0) return toUserDto(row)
 
       const updated = await app.db.transaction(async (tx) => {
+        await lock(tx, LOCK_SYNC)
         const [u] = await tx
           .update(users)
           .set({ ...changes, ...bump() })
@@ -106,10 +107,14 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       const { username, displayName, password, isAdmin } = req.body
       const passwordHash = await hashPassword(password)
       try {
-        const [created] = await app.db
-          .insert(users)
-          .values({ username, displayName, passwordHash, isAdmin: isAdmin ?? false })
-          .returning()
+        const created = await app.db.transaction(async (tx) => {
+          await lock(tx, LOCK_SYNC)
+          const [row] = await tx
+            .insert(users)
+            .values({ username, displayName, passwordHash, isAdmin: isAdmin ?? false })
+            .returning()
+          return row
+        })
         return reply.status(201).send(toUserDto(created!))
       } catch (e) {
         if (isUniqueViolation(e)) throw new AppError(409, 'username_taken', 'Username is already taken')
@@ -131,6 +136,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       const updated = await app.db.transaction(async (tx) => {
         // Serialize admin changes so two concurrent demotions cannot remove the last admin.
         await lock(tx, LOCK_USERS)
+        await lock(tx, LOCK_SYNC)
         const [target] = await tx.select().from(users).where(eq(users.id, req.params.id))
         if (!target || target.deleted) throw new AppError(404, 'user_not_found', 'User not found')
 

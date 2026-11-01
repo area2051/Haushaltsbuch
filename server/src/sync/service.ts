@@ -128,6 +128,13 @@ async function upsertCategory(sp: Tx, r: CategoryRecord): Promise<void> {
     .insert(categories)
     .values(r)
     .onConflictDoUpdate({ target: categories.id, set: { ...fields, ...bump() } })
+  if (r.deleted) {
+    // Budgets of a deleted category are meaningless; delete them in the same savepoint.
+    await sp
+      .update(budgets)
+      .set({ deleted: true, ...bump() })
+      .where(and(eq(budgets.categoryId, r.id), eq(budgets.deleted, false)))
+  }
 }
 
 async function upsertRecurringRule(sp: Tx, r: RecurringRuleRecord, today: string): Promise<void> {
