@@ -15,3 +15,9 @@ build/
 # Docker Compose bind mounts
 data/
 backups/
+
+# iOS
+ios/*.xcodeproj
+ios/HaushaltsbuchKit/.build/
+ios/HaushaltsbuchKit/.swiftpm/
+ios/build/

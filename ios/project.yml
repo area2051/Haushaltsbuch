@@ -1,0 +1,35 @@
+name: Haushaltsbuch
+options:
+  bundleIdPrefix: de.haushaltsbuch
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEVELOPMENT_TEAM: ""
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+packages:
+  HaushaltsbuchKit:
+    path: HaushaltsbuchKit
+targets:
+  Haushaltsbuch:
+    type: application
+    platform: iOS
+    sources:
+      - Haushaltsbuch
+    dependencies:
+      - package: HaushaltsbuchKit
+        product: HaushaltsbuchAPI
+      - package: HaushaltsbuchKit
+        product: HaushaltsbuchCore
+      - package: HaushaltsbuchKit
+        product: HaushaltsbuchData
+      - package: HaushaltsbuchKit
+        product: HaushaltsbuchUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.haushaltsbuch.app
+        INFOPLIST_FILE: Haushaltsbuch/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
