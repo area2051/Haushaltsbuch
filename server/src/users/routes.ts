@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { hashPassword, verifyPassword } from '../auth/passwords.js'
 import { hashRefreshToken } from '../auth/tokens.js'
 import type { Db } from '../db/client.js'
+import { LOCK_USERS, lock } from '../db/locks.js'
 import { refreshTokens, users } from '../db/schema.js'
 import { AppError } from '../errors.js'
 import { displayNameSchema, passwordSchema, setupBody, toUserDto, userDto } from './dto.js'
@@ -129,7 +130,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
       const updated = await app.db.transaction(async (tx) => {
         // Serialize admin changes so two concurrent demotions cannot remove the last admin.
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(2)`)
+        await lock(tx, LOCK_USERS)
         const [target] = await tx.select().from(users).where(eq(users.id, req.params.id))
         if (!target || target.deleted) throw new AppError(404, 'user_not_found', 'User not found')
 

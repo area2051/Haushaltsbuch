@@ -1,8 +1,9 @@
-import { count, sql } from 'drizzle-orm'
+import { count } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { hashPassword } from '../auth/passwords.js'
+import { LOCK_SETUP, lock } from '../db/locks.js'
 import { categories, users } from '../db/schema.js'
 import { AppError } from '../errors.js'
 import { setupBody, toUserDto, userDto } from '../users/dto.js'
@@ -27,7 +28,7 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       const { username, displayName, password } = req.body
       const passwordHash = await hashPassword(password)
       const user = await app.db.transaction(async (tx) => {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(1)`)
+        await lock(tx, LOCK_SETUP)
         const [row] = await tx.select({ n: count() }).from(users)
         if ((row?.n ?? 0) > 0) {
           throw new AppError(409, 'setup_already_done', 'Setup has already been completed')

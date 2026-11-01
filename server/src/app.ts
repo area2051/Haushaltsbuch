@@ -8,12 +8,15 @@ import type { Config } from './config.js'
 import type { Db } from './db/client.js'
 import { errorHandler, notFoundHandler } from './errors.js'
 import { setupRoutes } from './setup/routes.js'
+import { syncRoutes } from './sync/routes.js'
 import { userRoutes } from './users/routes.js'
 
 export type AppDeps = {
   config: Config
   db: Db
   clock?: Clock
+  /** Runs after a sync that changed recurring rules (wired to the generator in Task 8). */
+  onRulesChanged?: () => Promise<void>
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -34,6 +37,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(setupRoutes)
   await app.register(authRoutes)
   await app.register(userRoutes)
+  await app.register(syncRoutes, { onRulesChanged: deps.onRulesChanged })
 
   return app
 }
