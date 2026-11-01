@@ -57,3 +57,18 @@ export async function createTestApp(opts: { now?: string } = {}): Promise<{
     throw e
   }
 }
+
+export type UserDto = { id: string; username: string; displayName: string; isAdmin: boolean }
+
+export async function setupAdmin(
+  app: FastifyInstance,
+  overrides: Partial<{ username: string; displayName: string; password: string }> = {},
+): Promise<UserDto> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/setup',
+    payload: { username: 'admin', displayName: 'Admin', password: 'geheim123', ...overrides },
+  })
+  if (res.statusCode !== 201) throw new Error(`setup failed: ${res.statusCode} ${res.body}`)
+  return res.json().user as UserDto
+}

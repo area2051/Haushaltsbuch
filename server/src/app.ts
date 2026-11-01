@@ -5,6 +5,7 @@ import { systemClock } from './clock.js'
 import type { Config } from './config.js'
 import type { Db } from './db/client.js'
 import { errorHandler, notFoundHandler } from './errors.js'
+import { setupRoutes } from './setup/routes.js'
 
 export type AppDeps = {
   config: Config
@@ -24,6 +25,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.decorate('config', deps.config)
   app.decorate('clock', clock)
   app.decorate('db', deps.db)
+
+  await app.register(setupRoutes)
 
   return app
 }
