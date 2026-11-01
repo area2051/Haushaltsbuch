@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { hashPassword } from '../auth/passwords.js'
 import { categories, users } from '../db/schema.js'
 import { AppError } from '../errors.js'
-import { userDto } from '../users/dto.js'
+import { toUserDto, userDto } from '../users/dto.js'
 import { DEFAULT_CATEGORIES } from './defaultCategories.js'
 
 const setupBody = z.object({
@@ -48,7 +48,7 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
         return created!
       })
       return reply.status(201).send({
-        user: { id: user.id, username: user.username, displayName: user.displayName, isAdmin: user.isAdmin },
+        user: toUserDto(user),
       })
     },
   )

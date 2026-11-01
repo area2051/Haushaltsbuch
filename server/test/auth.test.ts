@@ -120,6 +120,18 @@ describe('POST /auth/login', () => {
     expect((await login()).statusCode).toBe(200)
   })
 
+  test('parallel wrong-password logins cannot bypass the lockout', async () => {
+    await setupAdmin(t.app)
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => login({ ...creds, password: 'falsch123' })),
+    )
+    const codes = results.map((r) => r.statusCode)
+    expect(codes.filter((c) => c === 401).length).toBeLessThanOrEqual(5)
+    expect(codes.filter((c) => c !== 401).every((c) => c === 429)).toBe(true)
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThanOrEqual(5)
+    expect((await login()).statusCode).toBe(429)
+  })
+
   test('lockout is per username', async () => {
     await setupAdmin(t.app)
     await createMember()
@@ -362,6 +374,20 @@ describe('createLoginLimiter', () => {
     // Counter starts fresh after the lock expired.
     limiter.fail('anna')
     expect(() => limiter.check('anna')).not.toThrow()
+  })
+
+  test('attempts in flight count against the limit until settled', () => {
+    const clock = new MutableClock('2026-01-15T12:00:00Z')
+    const limiter = createLoginLimiter(clock)
+    for (let i = 0; i < 5; i++) limiter.check('anna')
+    expect(() => limiter.check('anna')).toThrow(AppError)
+    limiter.release('anna')
+    expect(() => limiter.check('anna')).not.toThrow()
+    for (let i = 0; i < 3; i++) limiter.fail('anna')
+    limiter.reset('anna')
+    // One attempt still in flight; failures cleared by reset.
+    for (let i = 0; i < 4; i++) limiter.check('anna')
+    expect(() => limiter.check('anna')).toThrow(AppError)
   })
 
   test('reset clears failures', () => {

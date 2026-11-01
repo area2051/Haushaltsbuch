@@ -8,3 +8,7 @@ export const userDto = z.object({
 })
 
 export type UserDto = z.infer<typeof userDto>
+
+export function toUserDto(row: UserDto): UserDto {
+  return { id: row.id, username: row.username, displayName: row.displayName, isAdmin: row.isAdmin }
+}

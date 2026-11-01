@@ -4,7 +4,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { users } from '../db/schema.js'
 import { AppError } from '../errors.js'
-import { userDto } from '../users/dto.js'
+import { toUserDto, userDto } from '../users/dto.js'
 import { createLoginLimiter } from './loginLimiter.js'
 import { hashPassword, verifyPassword } from './passwords.js'
 import { issueRefreshToken, revokeRefreshToken, rotateRefreshToken, signAccessToken } from './tokens.js'
@@ -32,8 +32,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const { username, password, deviceName } = req.body
       limiter.check(username)
 
-      const [user] = await app.db.select().from(users).where(eq(users.username, username))
-      const ok = await verifyPassword(user?.passwordHash ?? dummyHash, password)
+      let user: typeof users.$inferSelect | undefined
+      let ok: boolean
+      try {
+        ;[user] = await app.db.select().from(users).where(eq(users.username, username))
+        ok = await verifyPassword(user?.passwordHash ?? dummyHash, password)
+      } catch (e) {
+        limiter.release(username)
+        throw e
+      }
       if (!user || !ok || user.deleted) {
         limiter.fail(username)
         throw new AppError(401, 'invalid_credentials', 'Invalid username or password')
@@ -45,7 +52,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return {
         accessToken,
         refreshToken,
-        user: { id: user.id, username: user.username, displayName: user.displayName, isAdmin: user.isAdmin },
+        user: toUserDto(user),
       }
     },
   )
