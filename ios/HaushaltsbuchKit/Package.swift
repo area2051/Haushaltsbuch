@@ -10,8 +10,22 @@ let package = Package(
         .library(name: "HaushaltsbuchData", targets: ["HaushaltsbuchData"]),
         .library(name: "HaushaltsbuchUI", targets: ["HaushaltsbuchUI"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-openapi-generator", from: "1.14.3"),
+        .package(url: "https://github.com/apple/swift-openapi-runtime", from: "1.13.3"),
+        .package(url: "https://github.com/apple/swift-openapi-urlsession", from: "1.4.0"),
+    ],
     targets: [
-        .target(name: "HaushaltsbuchAPI"),
+        .target(
+            name: "HaushaltsbuchAPI",
+            dependencies: [
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession"),
+            ],
+            plugins: [
+                .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator"),
+            ]
+        ),
         .target(name: "HaushaltsbuchCore"),
         .target(name: "HaushaltsbuchData", dependencies: ["HaushaltsbuchCore", "HaushaltsbuchAPI"]),
         .target(name: "HaushaltsbuchUI", dependencies: ["HaushaltsbuchData", "HaushaltsbuchCore"]),

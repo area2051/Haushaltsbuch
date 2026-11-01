@@ -1,3 +1,7 @@
+# App-Build: cd ios && xcodegen generate && xcodebuild build -project Haushaltsbuch.xcodeproj \
+#   -scheme Haushaltsbuch -destination 'platform=iOS Simulator,name=iPhone 17' -skipPackagePluginValidation
+# -skipPackagePluginValidation ist nötig, weil HaushaltsbuchAPI das swift-openapi-generator-Build-Plugin
+# nutzt (in Xcode stattdessen einmalig „Trust & Enable“ bestätigen).
 name: Haushaltsbuch
 options:
   bundleIdPrefix: de.haushaltsbuch
