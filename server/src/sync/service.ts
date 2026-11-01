@@ -50,6 +50,17 @@ const DB_REASONS: Record<string, string> = {
   '23514': 'check_violation',
 }
 
+/**
+ * Per-record rejection reason for a DB error, or undefined if the error must abort the request.
+ * Constraint violations and data exceptions (SQLSTATE class 22) are caused by the record itself;
+ * rejecting just that record keeps one bad record from poisoning every retry of the push.
+ */
+export function dbRejectionReason(e: unknown): string | undefined {
+  const code = pgCode(e)
+  if (!code) return undefined
+  return DB_REASONS[code] ?? (code.startsWith('22') ? 'invalid_value' : undefined)
+}
+
 function rawId(raw: unknown): string | null {
   if (raw && typeof raw === 'object' && typeof (raw as { id?: unknown }).id === 'string') {
     return (raw as { id: string }).id
@@ -75,7 +86,7 @@ class Collector {
       await tx.transaction(write)
       return true
     } catch (e) {
-      const reason = e instanceof Rejection ? e.reason : DB_REASONS[pgCode(e) ?? '']
+      const reason = e instanceof Rejection ? e.reason : dbRejectionReason(e)
       if (!reason) throw e
       this.rejected.push({ table, id, reason })
       return false

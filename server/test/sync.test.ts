@@ -391,6 +391,67 @@ describe('POST /sync', () => {
     expect(r.currentVersion).toBe(Number(max[0]!.v))
   })
 
+  test('NUL character in a text field rejects only that record', async () => {
+    const { admin, token } = await start()
+    const cat = await categoryId(token)
+    const bad = txn({ categoryId: cat, paidBy: admin.id, note: 'a\u0000b' })
+    const good = txn({ categoryId: cat, paidBy: admin.id })
+    const r = await sync(token, 0, { transactions: [bad, good] })
+    expect(r.rejected).toHaveLength(1)
+    expect(r.rejected[0]).toMatchObject({ table: 'transactions', id: bad.id })
+    expect(r.rejected[0]!.reason).toContain('note')
+    expect((await t.db.select().from(transactions)).map((x) => x.id)).toEqual([good.id])
+  })
+
+  test('uppercase uuids are normalised: edit keeps unchanged paidBy of a removed member, no duplicate', async () => {
+    const { token } = await start()
+    const b = await addMember(token)
+    const cat = await categoryId(token)
+    const record = txn({ categoryId: cat, paidBy: b.user.id, note: 'alt' })
+    await sync(token, 0, { transactions: [record] })
+    await t.db.update(users).set({ deleted: true }).where(eq(users.id, b.user.id))
+
+    const upper = {
+      ...record,
+      id: record.id.toUpperCase(),
+      categoryId: cat.toUpperCase(),
+      paidBy: b.user.id.toUpperCase(),
+      note: 'neu',
+    }
+    const r = await sync(token, 0, { transactions: [upper] })
+    expect(r.rejected).toEqual([])
+    expect(r.changes.transactions).toEqual([
+      expect.objectContaining({ id: record.id, categoryId: cat, paidBy: b.user.id, note: 'neu' }),
+    ])
+    const rows = await t.db.select().from(transactions)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: record.id, note: 'neu' })
+  })
+
+  test('recurring rule date rules: startDate >= 2000-01-01, endDate >= startDate', async () => {
+    const { admin, token } = await start()
+    const cat = await categoryId(token)
+    const early = rule({ categoryId: cat, paidBy: admin.id, startDate: '1999-12-31' })
+    const backwards = rule({ categoryId: cat, paidBy: admin.id, startDate: '2026-02-01', endDate: '2026-01-31' })
+    const sameDay = rule({ categoryId: cat, paidBy: admin.id, startDate: '2026-02-01', endDate: '2026-02-01' })
+    const r = await sync(token, 0, { recurringRules: [early, backwards, sameDay] })
+    expect(r.rejected.map((x) => x.id).sort()).toEqual([early.id, backwards.id].sort())
+    expect(r.rejected.find((x) => x.id === early.id)!.reason).toContain('startDate')
+    expect(r.rejected.find((x) => x.id === backwards.id)!.reason).toContain('endDate')
+    expect(r.changes.recurringRules.map((x) => x.id)).toEqual([sameDay.id])
+  })
+
+  test('lastVersion above MAX_SAFE_INTEGER → 400', async () => {
+    const { token } = await start()
+    const res = await t.app.inject({
+      method: 'POST',
+      url: '/sync',
+      headers: auth(token),
+      payload: { lastVersion: Number.MAX_SAFE_INTEGER + 2, changes: {} },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
   test('sync without token → 401', async () => {
     t = await createTestApp()
     const res = await t.app.inject({ method: 'POST', url: '/sync', payload: { lastVersion: 0, changes: {} } })

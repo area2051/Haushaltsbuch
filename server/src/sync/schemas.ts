@@ -13,10 +13,13 @@ export const calendarDate = z
     return y >= 1 && dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
   }, 'must be a valid calendar date')
 
-const id = z.uuid()
+/** UUID, normalised to lowercase (Swift encodes uppercase, Postgres returns lowercase). */
+const id = z.uuid().overwrite((s) => s.toLowerCase())
+/** Text that Postgres can store: NUL (U+0000) would raise SQLSTATE 22021. */
+const text = () => z.string().refine((s) => !s.includes('\u0000'), 'must not contain NUL characters')
 const amountCents = z.number().int().min(1).max(INT32_MAX)
 const kind = z.enum(['income', 'expense'])
-const note = z.string().max(200).nullable()
+const note = text().max(200).nullable()
 
 const base = { id, deleted: z.boolean() }
 
@@ -24,8 +27,8 @@ const base = { id, deleted: z.boolean() }
 
 export const categoryRecord = z.object({
   ...base,
-  name: z.string().min(1).max(40),
-  icon: z.string().max(100),
+  name: text().min(1).max(40),
+  icon: text().max(100),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   kind,
   sortOrder: z.number().int().min(-INT32_MAX).max(INT32_MAX),
@@ -49,7 +52,7 @@ export const budgetRecord = z.object({
   monthlyLimitCents: z.number().int().min(1).max(INT32_MAX),
 })
 
-export const recurringRuleRecord = z.object({
+const recurringRuleShape = z.object({
   ...base,
   amountCents,
   kind,
@@ -57,9 +60,14 @@ export const recurringRuleRecord = z.object({
   note,
   paidBy: id,
   frequency: z.enum(['weekly', 'monthly', 'yearly']),
-  startDate: calendarDate,
+  startDate: calendarDate.refine((s) => s >= '2000-01-01', 'must be on or after 2000-01-01'),
   endDate: calendarDate.nullable(),
 })
+
+export const recurringRuleRecord = recurringRuleShape.refine(
+  (r) => r.endDate === null || r.endDate >= r.startDate,
+  { message: 'must be on or after startDate', path: ['endDate'] },
+)
 
 export type CategoryRecord = z.infer<typeof categoryRecord>
 export type TransactionRecord = z.infer<typeof transactionRecord>
@@ -73,7 +81,7 @@ const version = z.number().int()
 export const categoryRecordOut = categoryRecord.extend({ version })
 export const transactionRecordOut = transactionRecord.extend({ version })
 export const budgetRecordOut = budgetRecord.extend({ version })
-export const recurringRuleRecordOut = recurringRuleRecord.extend({ version, nextDueDate: calendarDate })
+export const recurringRuleRecordOut = recurringRuleShape.extend({ version, nextDueDate: calendarDate })
 /**
  * UserDto plus sync fields. `deleted` is included because the spec requires deleted users
  * to be synced as well (otherwise a client could not tell that a member was removed).
@@ -89,7 +97,7 @@ export type UserRecord = z.infer<typeof userRecord>
  * but the route does NOT validate records with it: see `syncRequestEnvelope`.
  */
 export const syncRequest = z.object({
-  lastVersion: z.number().int().min(0),
+  lastVersion: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   changes: z.object({
     categories: z.array(categoryRecord).optional(),
     transactions: z.array(transactionRecord).optional(),
