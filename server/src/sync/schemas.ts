@@ -52,7 +52,7 @@ export const budgetRecord = z.object({
   monthlyLimitCents: z.number().int().min(1).max(INT32_MAX),
 }).meta({ id: 'BudgetRecord' })
 
-const recurringRuleShape = z.object({
+export const recurringRuleRecord = z.object({
   ...base,
   amountCents,
   kind,
@@ -62,14 +62,10 @@ const recurringRuleShape = z.object({
   frequency: z.enum(['weekly', 'monthly', 'yearly']),
   startDate: calendarDate.refine((s) => s >= '2000-01-01', 'must be on or after 2000-01-01'),
   endDate: calendarDate.nullable(),
-})
-
-export const recurringRuleRecord = recurringRuleShape
-  .refine((r) => r.endDate === null || r.endDate >= r.startDate, {
-    message: 'must be on or after startDate',
-    path: ['endDate'],
-  })
-  .meta({ id: 'RecurringRuleRecord' })
+}).refine((r) => r.endDate === null || r.endDate >= r.startDate, {
+  message: 'must be on or after startDate',
+  path: ['endDate'],
+}).meta({ id: 'RecurringRuleRecord' })
 
 export type CategoryRecord = z.infer<typeof categoryRecord>
 export type TransactionRecord = z.infer<typeof transactionRecord>
@@ -77,15 +73,56 @@ export type BudgetRecord = z.infer<typeof budgetRecord>
 export type RecurringRuleRecord = z.infer<typeof recurringRuleRecord>
 
 // ---- Records as returned by the server ----
+//
+// Plain shapes (types/formats only) without the input refinements above (lengths, startDate >= 2000,
+// endDate >= startDate, NUL check, ...): the zod serializer validates responses, so a single stored row
+// outside the input contract (older data, manual fix in the DB) must not turn every sync into a 500.
 
 const version = z.number().int()
+const outDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+/** Lenient UUID format (any 8-4-4-4-12 hex), not the strict RFC check used for input. */
+const outId = z.guid()
+const outBase = { id: outId, version, deleted: z.boolean() }
 
-export const categoryRecordOut = categoryRecord.extend({ version }).meta({ id: 'CategoryRecordOut' })
-export const transactionRecordOut = transactionRecord.extend({ version }).meta({ id: 'TransactionRecordOut' })
-export const budgetRecordOut = budgetRecord.extend({ version }).meta({ id: 'BudgetRecordOut' })
-export const recurringRuleRecordOut = recurringRuleShape
-  .extend({ version, nextDueDate: calendarDate })
-  .meta({ id: 'RecurringRuleRecordOut' })
+export const categoryRecordOut = z.object({
+  ...outBase,
+  name: z.string(),
+  icon: z.string(),
+  color: z.string(),
+  kind,
+  sortOrder: z.number().int(),
+  archived: z.boolean(),
+}).meta({ id: 'CategoryRecordOut' })
+
+export const transactionRecordOut = z.object({
+  ...outBase,
+  amountCents: z.number().int(),
+  kind,
+  categoryId: outId,
+  date: outDate,
+  note: z.string().nullable(),
+  paidBy: outId,
+  recurringRuleId: outId.nullable(),
+}).meta({ id: 'TransactionRecordOut' })
+
+export const budgetRecordOut = z.object({
+  ...outBase,
+  categoryId: outId,
+  monthlyLimitCents: z.number().int(),
+}).meta({ id: 'BudgetRecordOut' })
+
+export const recurringRuleRecordOut = z.object({
+  ...outBase,
+  amountCents: z.number().int(),
+  kind,
+  categoryId: outId,
+  note: z.string().nullable(),
+  paidBy: outId,
+  frequency: z.enum(['weekly', 'monthly', 'yearly']),
+  startDate: outDate,
+  endDate: outDate.nullable(),
+  nextDueDate: outDate,
+}).meta({ id: 'RecurringRuleRecordOut' })
 /**
  * UserDto plus sync fields. `deleted` is included because the spec requires deleted users
  * to be synced as well (otherwise a client could not tell that a member was removed).

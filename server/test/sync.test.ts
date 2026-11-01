@@ -326,6 +326,99 @@ describe('POST /sync', () => {
     expect(normal.fullResync).toBe(false)
   })
 
+  /** The SQL step of the restore procedure in docs/betrieb.md (keep both in sync). */
+  const RESTORE_SQL = sql`
+    UPDATE sync_meta SET resync_floor = setval('sync_version_seq', COALESCE(GREATEST(
+      (SELECT max(version) FROM users),
+      (SELECT max(version) FROM categories),
+      (SELECT max(version) FROM transactions),
+      (SELECT max(version) FROM budgets),
+      (SELECT max(version) FROM recurring_rules),
+      (SELECT last_value FROM sync_version_seq)
+    ), 0) + 1000000)`
+
+  test('after a backup restore, a client below the resync floor gets fullResync once; others do not', async () => {
+    const { admin, token } = await start()
+    const before = await sync(token, 0)
+    const cat = before.changes.categories[0]!.id
+    // Device B synced before the backup was taken.
+    const oldVersion = before.currentVersion
+    // Simulate the restore step of docs/betrieb.md (as if a backup taken right now was restored).
+    await t.db.execute(RESTORE_SQL)
+    const [meta] = await t.db.execute<{ resync_floor: string }>(sql`SELECT resync_floor::text FROM sync_meta`)
+    const floor = Number(meta!.resync_floor)
+    expect(floor).toBe(oldVersion + 1000000)
+
+    const resynced = await sync(token, oldVersion)
+    expect(resynced.fullResync).toBe(true)
+    expect(resynced.changes.categories).toHaveLength(10)
+    expect(resynced.changes.users).toHaveLength(1)
+    // No write since the restore: the floor is the current version, so the next sync is a normal one.
+    expect(resynced.currentVersion).toBe(floor)
+
+    const normal = await sync(token, resynced.currentVersion)
+    expect(normal.fullResync).toBe(false)
+    expect(normal.changes.categories).toEqual([])
+
+    // New writes get versions above the floor; a client at the floor receives them incrementally.
+    const record = txn({ categoryId: cat, paidBy: admin.id })
+    const pushed = await sync(token, floor, { transactions: [record] })
+    expect(pushed.fullResync).toBe(false)
+    expect(pushed.changes.transactions.map((x) => x.version)[0]).toBeGreaterThan(floor)
+    const later = await sync(token, pushed.currentVersion)
+    expect(later.fullResync).toBe(false)
+  })
+
+  test('response serialization does not re-apply input refinements to stored rows', async () => {
+    const { admin, token } = await start()
+    const [cat] = await t.db
+      .insert(categories)
+      .values({ name: 'x'.repeat(60), icon: 'i'.repeat(150), color: '#123456', kind: 'expense' })
+      .returning()
+    await t.db.insert(recurringRules).values({
+      amountCents: 100,
+      kind: 'expense',
+      categoryId: cat!.id,
+      note: 'n'.repeat(300),
+      paidBy: admin.id,
+      frequency: 'monthly',
+      startDate: '1999-01-01',
+      endDate: '1998-01-01',
+      nextDueDate: '1999-01-01',
+    })
+    const r = await sync(token, 0)
+    expect(r.changes.categories.find((c) => c.id === cat!.id)).toMatchObject({ name: 'x'.repeat(60) })
+    expect(r.changes.recurringRules).toHaveLength(1)
+    expect(r.changes.recurringRules[0]).toMatchObject({ startDate: '1999-01-01', endDate: '1998-01-01' })
+  })
+
+  test('push bodies above 1 MiB are accepted; above 10 MiB → 413 payload_too_large', async () => {
+    const { token } = await start()
+    const big = await t.app.inject({
+      method: 'POST',
+      url: '/sync',
+      headers: auth(token),
+      payload: { lastVersion: 0, changes: {}, pad: 'x'.repeat(2 * 1024 * 1024) },
+    })
+    expect(big.statusCode, big.body).toBe(200)
+    const tooBig = await t.app.inject({
+      method: 'POST',
+      url: '/sync',
+      headers: auth(token),
+      payload: { lastVersion: 0, changes: {}, pad: 'x'.repeat(11 * 1024 * 1024) },
+    })
+    expect(tooBig.statusCode).toBe(413)
+    expect(tooBig.json()).toEqual({ error: { code: 'payload_too_large', message: expect.any(String) } })
+  })
+
+  test('ids of records rejected at parse time are lowercased', async () => {
+    const { token } = await start()
+    const upper = randomUUID().toUpperCase()
+    const r = await sync(token, 0, { transactions: [{ id: upper, deleted: false }] })
+    expect(r.rejected).toHaveLength(1)
+    expect(r.rejected[0]!.id).toBe(upper.toLowerCase())
+  })
+
   test('second budget for same category → rejected unique_violation', async () => {
     const { token } = await start()
     const cat = await categoryId(token)

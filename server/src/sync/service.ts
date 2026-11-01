@@ -2,7 +2,7 @@ import { and, asc, eq, gt, sql } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { Db } from '../db/client.js'
 import { LOCK_SYNC, lock } from '../db/locks.js'
-import { budgets, categories, recurringRules, transactions, users } from '../db/schema.js'
+import { budgets, categories, recurringRules, syncMeta, transactions, users } from '../db/schema.js'
 import { firstOccurrenceOnOrAfter } from '../recurring/dates.js'
 import {
   type BudgetRecord,
@@ -63,7 +63,7 @@ export function dbRejectionReason(e: unknown): string | undefined {
 
 function rawId(raw: unknown): string | null {
   if (raw && typeof raw === 'object' && typeof (raw as { id?: unknown }).id === 'string') {
-    return (raw as { id: string }).id
+    return (raw as { id: string }).id.toLowerCase()
   }
   return null
 }
@@ -197,17 +197,28 @@ async function upsertBudget(sp: Tx, r: BudgetRecord): Promise<void> {
     .onConflictDoUpdate({ target: budgets.id, set: { ...fields, ...bump() } })
 }
 
-/** Highest version across all sync tables (0 when empty). */
-async function maxVersion(tx: Tx): Promise<number> {
+/**
+ * Current server version: the highest version across all sync tables, but at least the resync
+ * floor (0 when empty). Including the floor means that right after a restore (no write yet) a
+ * client gets `currentVersion = floor` and its next sync is a normal one, not another full resync.
+ */
+async function currentServerVersion(tx: Tx): Promise<number> {
   const rows = await tx.execute<{ v: string | null }>(sql`
     SELECT GREATEST(
       (SELECT max(version) FROM users),
       (SELECT max(version) FROM categories),
       (SELECT max(version) FROM transactions),
       (SELECT max(version) FROM budgets),
-      (SELECT max(version) FROM recurring_rules)
+      (SELECT max(version) FROM recurring_rules),
+      (SELECT resync_floor FROM sync_meta)
     )::text AS v`)
   return Number(rows[0]?.v ?? 0)
+}
+
+/** Versions below this floor predate the last backup restore (see docs/betrieb.md). */
+async function resyncFloor(tx: Tx): Promise<number> {
+  const [row] = await tx.select({ floor: syncMeta.resyncFloor }).from(syncMeta)
+  return row?.floor ?? 0
 }
 
 /**
@@ -293,7 +304,7 @@ export async function pull(
       .orderBy(asc(users.version)),
   ])
   return {
-    currentVersion: await maxVersion(tx),
+    currentVersion: await currentServerVersion(tx),
     changes: { categories: cats, transactions: txns, budgets: buds, recurringRules: rules, users: us },
   }
 }
@@ -315,8 +326,12 @@ export async function applySync(
 ): Promise<{ response: SyncResponse; rulesChanged: boolean }> {
   return db.transaction(async (tx) => {
     await lock(tx, LOCK_SYNC)
-    // Measured before writing: after a backup restore the client may be ahead of the server.
-    const fullResync = req.lastVersion > (await maxVersion(tx))
+    // Measured before writing. After a backup restore the client may be ahead of the server, or
+    // its lastVersion predates the restore (below the floor): versions it has seen may have been
+    // reused by new writes, so an incremental pull could skip records forever.
+    const floor = await resyncFloor(tx)
+    const fullResync =
+      req.lastVersion > (await currentServerVersion(tx)) || (req.lastVersion > 0 && req.lastVersion < floor)
     const c = new Collector()
     let rulesChanged = false
 

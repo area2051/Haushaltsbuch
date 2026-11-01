@@ -6,6 +6,9 @@ import { todayIn } from '../clock.js'
 import { syncRequest, type SyncRequest, syncRequestEnvelope, syncResponse } from './schemas.js'
 import { applySync, pullLocked } from './service.js'
 
+/** Maximum push body size (bytes); larger bodies → 413 `payload_too_large`. */
+export const SYNC_BODY_LIMIT = 10 * 1024 * 1024
+
 export type SyncRoutesOptions = {
   /** Called after a sync that changed recurring rules (Task 8: generate due transactions). */
   onRulesChanged?: () => Promise<void>
@@ -18,12 +21,14 @@ export async function syncRoutes(app: FastifyInstance, opts: SyncRoutesOptions):
     '/sync',
     {
       onRequest: app.authenticate,
+      // A full initial push of years of data can exceed Fastify's default 1 MiB.
+      bodyLimit: SYNC_BODY_LIMIT,
       // `body` is the fully typed SyncRequest so OpenAPI documents typed record arrays...
       schema: {
         operationId: 'sync',
         security: [{ bearerAuth: [] }],
         body: syncRequest,
-        response: { 200: syncResponse, ...errorResponses(400, 401) },
+        response: { 200: syncResponse, ...errorResponses(400, 401, 413) },
       },
       // ...but validation only checks the envelope; records are parsed one by one in applySync
       // so a single invalid record is rejected alone (spec §4).

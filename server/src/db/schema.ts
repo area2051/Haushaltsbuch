@@ -17,6 +17,20 @@ import {
 
 export const syncVersionSeq = pgSequence('sync_version_seq')
 
+/**
+ * Exactly one row (seeded by the migration). `resync_floor` is raised by the backup-restore
+ * procedure (docs/betrieb.md): a client whose `lastVersion` is below it synced against data that
+ * may have been lost, so it gets a full resync.
+ */
+export const syncMeta = pgTable(
+  'sync_meta',
+  {
+    id: boolean('id').primaryKey().default(true),
+    resyncFloor: bigint('resync_floor', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => [check('sync_meta_single_row', sql`${t.id}`)],
+)
+
 export const kindEnum = pgEnum('kind', ['income', 'expense'])
 export const frequencyEnum = pgEnum('frequency', ['weekly', 'monthly', 'yearly'])
 

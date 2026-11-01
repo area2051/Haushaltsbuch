@@ -106,7 +106,7 @@ Ein Endpunkt `POST /sync` für beide Richtungen.
    - `next_due_date` wiederkehrender Regeln setzt nur der Server.
 3. Hat der Push wiederkehrende Regeln geändert, läuft danach sofort die Erzeugung wiederkehrender Buchungen (Abschnitt 5).
 4. Alle Datensätze aller Sync-Tabellen (inkl. `users` ohne Passwort-Hash, inkl. gelöschter) mit `version > lastVersion` zurückgeben – auch die gerade geschriebenen.
-5. Ist `lastVersion` größer als die höchste Version auf dem Server (z. B. nach Wiederherstellung eines Backups), antwortet der Server mit `fullResync: true` und dem vollständigen Datenbestand; die App ersetzt dann ihren Stand (ungesendete lokale Änderungen werden vorher übertragen).
+5. Ist `lastVersion` größer als die höchste Version auf dem Server (z. B. nach Wiederherstellung eines Backups), antwortet der Server mit `fullResync: true` und dem vollständigen Datenbestand; die App ersetzt dann ihren Stand (ungesendete lokale Änderungen werden vorher übertragen). Dasselbe gilt, wenn `lastVersion` > 0 unter der Resync-Grenze `sync_meta.resync_floor` liegt, die die Wiederherstellungsprozedur setzt (siehe docs/betrieb.md); ohne sie könnten nach einer Wiederherstellung neu vergebene Versionen von Geräten übersprungen werden.
 
 **Response:**
 ```json

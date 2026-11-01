@@ -38,6 +38,9 @@ export function errorHandler(err: FastifyError | Error, req: FastifyRequest, rep
     return reply.status(400).send(envelope('validation_failed', message))
   }
   const status = (err as FastifyError).statusCode
+  if (status === 413) {
+    return reply.status(413).send(envelope('payload_too_large', 'Request body is too large'))
+  }
   if (status && status >= 400 && status < 500) {
     return reply.status(status).send(envelope('bad_request', err.message))
   }

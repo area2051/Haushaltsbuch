@@ -38,6 +38,7 @@ export async function createTestApp(
       sql`TRUNCATE users, refresh_tokens, categories, transactions, budgets, recurring_rules RESTART IDENTITY CASCADE`,
     )
     await db.execute(sql`ALTER SEQUENCE sync_version_seq RESTART`)
+    await db.execute(sql`UPDATE sync_meta SET resync_floor = 0`)
     const clock = new MutableClock(opts.now ?? '2026-01-15T12:00:00Z')
     const config: Config = {
       databaseUrl,
