@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod'
+import { registerAuth } from './auth/plugin.js'
+import { authRoutes } from './auth/routes.js'
 import type { Clock } from './clock.js'
 import { systemClock } from './clock.js'
 import type { Config } from './config.js'
@@ -26,7 +28,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.decorate('clock', clock)
   app.decorate('db', deps.db)
 
+  registerAuth(app)
+
   await app.register(setupRoutes)
+  await app.register(authRoutes)
 
   return app
 }

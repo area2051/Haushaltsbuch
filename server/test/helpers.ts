@@ -5,6 +5,7 @@ import { buildApp } from '../src/app.js'
 import type { Clock } from '../src/clock.js'
 import type { Config } from '../src/config.js'
 import { createDb, type Db } from '../src/db/client.js'
+import type { UserDto } from '../src/users/dto.js'
 
 export class MutableClock implements Clock {
   private current: Date
@@ -57,8 +58,6 @@ export async function createTestApp(opts: { now?: string } = {}): Promise<{
     throw e
   }
 }
-
-export type UserDto = { id: string; username: string; displayName: string; isAdmin: boolean }
 
 export async function setupAdmin(
   app: FastifyInstance,
