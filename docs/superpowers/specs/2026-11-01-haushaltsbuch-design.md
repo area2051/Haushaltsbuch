@@ -101,13 +101,18 @@ Ein Endpunkt `POST /sync` für beide Richtungen.
 **Ablauf auf dem Server** (in einer DB-Transaktion, serialisiert per `pg_advisory_xact_lock`, damit Versionen lückenlos in Commit-Reihenfolge sichtbar werden):
 1. Jeden übermittelten Datensatz mit zod prüfen. Ungültige Datensätze werden einzeln abgelehnt, der Rest wird übernommen.
 2. Gültige Datensätze per Upsert anhand der `id` schreiben; jeder bekommt eine neue `version`. Konfliktregel: **Last-Write-Wins** – die zuletzt beim Server eintreffende Änderung gewinnt.
+   - Löschen einer Kategorie, auf die noch aktive Buchungen oder Regeln zeigen, wird mit `category_in_use` abgelehnt.
+   - Trifft eine Buchung, Regel oder ein Budget für eine bereits gelöschte Kategorie ein (anderes Gerät war offline), wird die Kategorie als archiviert wiederhergestellt und der Datensatz angenommen.
+   - `next_due_date` wiederkehrender Regeln setzt nur der Server.
 3. Hat der Push wiederkehrende Regeln geändert, läuft danach sofort die Erzeugung wiederkehrender Buchungen (Abschnitt 5).
 4. Alle Datensätze aller Sync-Tabellen (inkl. `users` ohne Passwort-Hash, inkl. gelöschter) mit `version > lastVersion` zurückgeben – auch die gerade geschriebenen.
+5. Ist `lastVersion` größer als die höchste Version auf dem Server (z. B. nach Wiederherstellung eines Backups), antwortet der Server mit `fullResync: true` und dem vollständigen Datenbestand; die App ersetzt dann ihren Stand (ungesendete lokale Änderungen werden vorher übertragen).
 
 **Response:**
 ```json
 {
   "currentVersion": 1302,
+  "fullResync": false,
   "changes":  { "categories": […], "transactions": […], "budgets": […], "recurringRules": […], "users": […] },
   "rejected": [ { "table": "transactions", "id": "…", "reason": "amount_cents must be > 0" } ]
 }
