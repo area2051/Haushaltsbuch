@@ -8,8 +8,9 @@ Der Server läuft per Docker Compose mit drei Containern: `postgres`, `api` und 
 
 ```bash
 cp .env.example .env
-# POSTGRES_PASSWORD setzen, JWT_SECRET erzeugen:
-openssl rand -base64 48
+# POSTGRES_PASSWORD (URL-sicher, nur Hex/Alphanumerisch, kein $) und JWT_SECRET erzeugen:
+openssl rand -hex 32       # POSTGRES_PASSWORD
+openssl rand -base64 48    # JWT_SECRET
 docker compose up -d --build
 curl -s localhost:3000/health     # {"status":"ok","setupRequired":true}
 ```
@@ -57,17 +58,22 @@ Migrationen laufen beim Start der API automatisch. Daten bleiben im Volume `./da
 Der Container `backup` erstellt täglich um 02:30 (Zeitzone `TZ`) `./backups/haushaltsbuch-YYYY-MM-DD.dump` (`pg_dump -Fc`) und löscht Dumps älter als 30 Tage. Manuell auslösen:
 
 ```bash
-docker compose exec backup /backup.sh
+docker compose exec backup sh /backup.sh
 ```
 
 ## Backup wiederherstellen
 
 ```bash
-docker compose stop api
+# 1. Dump prüfen, bevor etwas gelöscht wird (muss den Inhalt auflisten, ohne Fehler):
+docker compose exec -T postgres pg_restore -l < backups/haushaltsbuch-YYYY-MM-DD.dump | head
+# 2. API und Backup-Container anhalten
+docker compose stop api backup
+# 3. Datenbank neu anlegen und einspielen
 docker compose exec -T postgres dropdb -U haushaltsbuch haushaltsbuch
 docker compose exec -T postgres createdb -U haushaltsbuch haushaltsbuch
 docker compose exec -T postgres pg_restore -U haushaltsbuch -d haushaltsbuch < backups/haushaltsbuch-YYYY-MM-DD.dump
-docker compose start api
+# 4. Wieder starten
+docker compose start api backup
 ```
 
 Zusätzlich sollte `./backups` regelmäßig auf ein anderes Medium kopiert werden.

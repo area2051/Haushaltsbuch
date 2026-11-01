@@ -10,7 +10,7 @@ services:
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U haushaltsbuch -d haushaltsbuch"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U haushaltsbuch -d haushaltsbuch"]
       interval: 10s
       timeout: 5s
       retries: 5
