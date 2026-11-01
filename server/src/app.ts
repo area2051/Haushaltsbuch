@@ -3,12 +3,12 @@ import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod
 import type { Clock } from './clock.js'
 import { systemClock } from './clock.js'
 import type { Config } from './config.js'
+import type { Db } from './db/client.js'
 import { errorHandler, notFoundHandler } from './errors.js'
 
 export type AppDeps = {
   config: Config
-  /** Typed and required from Task 2 on. */
-  db?: unknown
+  db: Db
   clock?: Clock
 }
 
@@ -23,6 +23,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.decorate('config', deps.config)
   app.decorate('clock', clock)
+  app.decorate('db', deps.db)
 
   return app
 }
@@ -31,5 +32,6 @@ declare module 'fastify' {
   interface FastifyInstance {
     config: Config
     clock: Clock
+    db: Db
   }
 }

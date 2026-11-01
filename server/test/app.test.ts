@@ -1,26 +1,31 @@
-import { expect, test } from 'vitest'
+import { afterEach, expect, test } from 'vitest'
 import { z } from 'zod'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
-import { buildApp } from '../src/app.js'
+import type { FastifyInstance } from 'fastify'
 import { AppError } from '../src/errors.js'
-import type { Config } from '../src/config.js'
+import { createTestApp } from './helpers.js'
 
-const config: Config = {
-  databaseUrl: 'postgres://x',
-  jwtSecret: 'x'.repeat(32),
-  port: 3000,
-  timeZone: 'Europe/Berlin',
+let closeApp: (() => Promise<void>) | undefined
+afterEach(async () => {
+  await closeApp?.()
+  closeApp = undefined
+})
+
+async function makeApp(): Promise<FastifyInstance> {
+  const ctx = await createTestApp()
+  closeApp = ctx.close
+  return ctx.app
 }
 
 test('unknown route returns error envelope', async () => {
-  const app = await buildApp({ config })
+  const app = await makeApp()
   const res = await app.inject({ method: 'GET', url: '/nope' })
   expect(res.statusCode).toBe(404)
   expect(res.json()).toEqual({ error: { code: 'not_found', message: expect.any(String) } })
 })
 
 test('AppError is rendered with its code', async () => {
-  const app = await buildApp({ config })
+  const app = await makeApp()
   app.get('/boom', async () => {
     throw new AppError(409, 'conflict', 'x')
   })
@@ -30,7 +35,7 @@ test('AppError is rendered with its code', async () => {
 })
 
 test('unexpected error returns 500 without internals', async () => {
-  const app = await buildApp({ config })
+  const app = await makeApp()
   app.get('/boom', async () => {
     throw new Error('secret')
   })
@@ -41,7 +46,7 @@ test('unexpected error returns 500 without internals', async () => {
 })
 
 test('validation error returns 400 validation_failed', async () => {
-  const app = await buildApp({ config })
+  const app = await makeApp()
   app.withTypeProvider<ZodTypeProvider>().post(
     '/echo',
     { schema: { body: z.object({ name: z.string() }) } },
