@@ -41,6 +41,7 @@ struct SetupView: View {
             Section {
                 Button("Anderen Server wählen") { model.chooseOtherServer() }
                     .disabled(busy)
+                    .accessibilityIdentifier("setup.otherServer")
             }
         }
         .navigationTitle("Haushalt einrichten")

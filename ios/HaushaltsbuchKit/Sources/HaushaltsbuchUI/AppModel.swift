@@ -45,6 +45,17 @@ public final class AppModel {
         case needsDiscardConfirmation(pending: Int)
     }
 
+    /// Benutzerwechsel gescheitert: alte Daten nicht gelöscht, die neue Sitzung wurde verworfen.
+    public enum SwitchError: Error, Equatable {
+        case localDataNotCleared
+
+        public var germanMessage: String {
+            switch self {
+            case .localDataNotCleared: "Lokale Daten konnten nicht gelöscht werden. Bitte erneut versuchen."
+            }
+        }
+    }
+
     public enum InputError: Error, Equatable {
         case invalidServerURL
 
@@ -60,13 +71,21 @@ public final class AppModel {
         public var makeTransport: @MainActor (Client) -> any SyncTransport
         public var makeCursor: @MainActor (URL, UUID) -> any SyncCursorStore
         public var makeScheduler: @MainActor (SyncEngine) -> any SyncScheduling
+        /// Leert den lokalen Store beim Benutzerwechsel (Tests lassen es scheitern).
+        public var wipeStore: @MainActor (ModelContext) throws -> Void
+        /// Höchstdauer des Syncs vor dem Abmelden (offline sonst bis zum Request-Timeout).
+        public var logoutSyncTimeout: Double
 
         public init(makeTransport: @escaping @MainActor (Client) -> any SyncTransport,
                     makeCursor: @escaping @MainActor (URL, UUID) -> any SyncCursorStore,
-                    makeScheduler: @escaping @MainActor (SyncEngine) -> any SyncScheduling) {
+                    makeScheduler: @escaping @MainActor (SyncEngine) -> any SyncScheduling,
+                    wipeStore: @escaping @MainActor (ModelContext) throws -> Void = { try AppModel.deleteAllRecords(in: $0) },
+                    logoutSyncTimeout: Double = 5) {
             self.makeTransport = makeTransport
             self.makeCursor = makeCursor
             self.makeScheduler = makeScheduler
+            self.wipeStore = wipeStore
+            self.logoutSyncTimeout = logoutSyncTimeout
         }
 
         public static func live(defaults: UserDefaults = .standard) -> Dependencies {
@@ -79,8 +98,11 @@ public final class AppModel {
         }
     }
 
-    /// Server, dessen Daten im lokalen Store liegen (für die Wechsel-Erkennung).
+    /// Server und Benutzer, deren Daten im lokalen Store liegen (Wechsel-Erkennung). Eigene Schlüssel
+    /// statt `auth.lastUsername`: der wird schon beim Anmelden überschrieben, auch wenn das Leeren
+    /// danach scheitert.
     static let dataServerKey = "app.dataServerURL"
+    static let dataUsernameKey = "app.dataUsername"
 
     @ObservationIgnored public let container: ModelContainer
     @ObservationIgnored public private(set) var repository: Repository!
@@ -93,6 +115,9 @@ public final class AppModel {
     @ObservationIgnored private let dependencies: Dependencies
     /// Während eines Benutzerwechsels: Sitzung erst nach dem Leeren des Stores aktivieren.
     @ObservationIgnored private var holdActivation = false
+    /// Während eines Benutzerwechsels der Anmeldezustand von vorher: die Oberfläche bleibt auf dem
+    /// Anmelde-/Einrichtungsbildschirm, bis die alten Daten gelöscht sind (beobachtet).
+    private var frozenAuthState: AuthState?
 
     private struct SessionKey: Equatable {
         let serverURL: URL
@@ -114,8 +139,13 @@ public final class AppModel {
 
     // MARK: Zustand
 
+    /// Anmeldezustand, den die Oberfläche zeigt (während eines Benutzerwechsels der vorherige).
+    public var visibleAuthState: AuthState {
+        frozenAuthState ?? auth.state
+    }
+
     public var phase: Phase {
-        switch auth.state {
+        switch visibleAuthState {
         case .loggedIn:
             .ready
         case .needsLogin:
@@ -160,7 +190,11 @@ public final class AppModel {
     /// Abmelden: vorher noch einmal synchronisieren (best effort), dann Sitzung verwerfen.
     /// Nicht gesendete Änderungen bleiben lokal erhalten.
     public func logout() async {
-        await engine?.syncNow()
+        if let engine {
+            await Self.runBounded(seconds: dependencies.logoutSyncTimeout) {
+                await engine.syncNow()
+            }
+        }
         deactivate()
         await auth.logout()
     }
@@ -201,16 +235,31 @@ public final class AppModel {
             }
         }
         holdActivation = switching
-        defer { holdActivation = false }
+        if switching { frozenAuthState = auth.state }
+        defer {
+            holdActivation = false
+            frozenAuthState = nil
+        }
         try await action()
         // Erst nach erfolgreicher Anmeldung leeren: falsches Passwort verliert keine Daten.
         if switching, case let .loggedIn(session) = auth.state {
             deactivate()
-            wipeStore()
+            do {
+                try dependencies.wipeStore(container.mainContext)
+            } catch {
+                logger.error("Lokaler Store nicht geleert: \(String(describing: error), privacy: .public)")
+                container.mainContext.rollback()
+                // Neue Sitzung nicht auf fremden Daten starten: wieder abmelden.
+                await auth.logout()
+                throw SwitchError.localDataNotCleared
+            }
+            defaults.removeObject(forKey: Self.dataUsernameKey)
+            defaults.removeObject(forKey: Self.dataServerKey)
             var cursor = dependencies.makeCursor(session.serverURL, session.userId)
             cursor.lastVersion = 0
         }
         holdActivation = false
+        frozenAuthState = nil
         authStateChanged()
         return .loggedIn
     }
@@ -218,26 +267,27 @@ public final class AppModel {
     /// Anderer Benutzer als zuletzt angemeldet, oder Daten im Store stammen von einem anderen Server.
     private func wouldSwitch(username: String) -> Bool {
         if auth.loginWouldSwitchUser(username) { return true }
+        if let owner = defaults.string(forKey: Self.dataUsernameKey),
+           Self.normalize(owner) != Self.normalize(username) { return true }
         guard let dataServer = defaults.url(forKey: Self.dataServerKey),
               let target = auth.state.serverURL else { return false }
         return dataServer != target
     }
 
-    /// Löscht alle Datensätze aller Typen (keine Datei-Löschung nötig).
-    private func wipeStore() {
-        let context = container.mainContext
-        do {
-            for type in AppSchema.models {
-                try deleteAll(type, in: context)
-            }
-            try context.save()
-        } catch {
-            logger.error("Lokaler Store nicht geleert: \(String(describing: error), privacy: .public)")
-            context.rollback()
-        }
+    nonisolated private static func normalize(_ username: String) -> String {
+        username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private func deleteAll<T: PersistentModel>(_ type: T.Type, in context: ModelContext) throws {
+    /// Standard für `Dependencies.wipeStore`: löscht alle Datensätze aller Typen und speichert
+    /// (keine Datei-Löschung nötig).
+    public static func deleteAllRecords(in context: ModelContext) throws {
+        for type in AppSchema.models {
+            try deleteAll(type, in: context)
+        }
+        try context.save()
+    }
+
+    private static func deleteAll<T: PersistentModel>(_ type: T.Type, in context: ModelContext) throws {
         for object in try context.fetch(FetchDescriptor<T>()) {
             context.delete(object)
         }
@@ -275,6 +325,7 @@ public final class AppModel {
         self.scheduler = scheduler
         activeSession = key
         defaults.set(session.serverURL, forKey: Self.dataServerKey)
+        defaults.set(session.username, forKey: Self.dataUsernameKey)
         scheduler.start()
     }
 
@@ -283,5 +334,38 @@ public final class AppModel {
         scheduler = nil
         engine = nil
         activeSession = nil
+    }
+
+    // MARK: Zeitlimit
+
+    /// Führt `work` aus, kehrt aber spätestens nach `seconds` zurück (und bricht `work` dann ab).
+    static func runBounded(seconds: Double, _ work: @escaping @MainActor () async -> Void) async {
+        let race = Race()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            race.continuation = continuation
+            race.worker = Task { @MainActor in
+                await work()
+                race.finish()
+            }
+            race.timer = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled else { return }
+                race.worker?.cancel()
+                race.finish()
+            }
+        }
+    }
+
+    @MainActor
+    private final class Race {
+        var continuation: CheckedContinuation<Void, Never>?
+        var worker: Task<Void, Never>?
+        var timer: Task<Void, Never>?
+
+        func finish() {
+            timer?.cancel()
+            continuation?.resume()
+            continuation = nil
+        }
     }
 }

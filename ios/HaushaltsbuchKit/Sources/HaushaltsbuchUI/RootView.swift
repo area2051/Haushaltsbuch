@@ -26,7 +26,7 @@ public struct RootView: View {
         switch model.phase {
         case .onboarding:
             NavigationStack {
-                switch model.auth.state {
+                switch model.visibleAuthState {
                 case .needsSetup:
                     SetupView()
                 case .needsLogin:

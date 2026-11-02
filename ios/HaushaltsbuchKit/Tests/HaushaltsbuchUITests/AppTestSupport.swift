@@ -76,6 +76,15 @@ final class StubSyncTransport: SyncTransport {
     }
 }
 
+/// Fake-`SyncTransport`, der nie antwortet (bis zum Abbruch) – simuliert einen hängenden Request.
+final class HangingSyncTransport: SyncTransport {
+    func sync(_ request: Components.Schemas.SyncRequest) async throws -> Components.Schemas.SyncResponse {
+        while true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+}
+
 /// Zeichnet die Aufrufe des Schedulers auf, synchronisiert selbst nicht.
 @MainActor
 final class FakeScheduler: SyncScheduling {
@@ -133,7 +142,9 @@ final class AppFixture {
 
     /// - Parameter realSyncTransport: `true` → `ClientSyncTransport` über den Fake-Client
     ///   (für Tests mit Token-Ablauf); sonst `syncTransport`.
-    init(session: StoredSession? = nil, lastUsername: String? = nil, realSyncTransport: Bool = false) throws {
+    init(session: StoredSession? = nil, lastUsername: String? = nil, realSyncTransport: Bool = false,
+         hangingSync: Bool = false, logoutSyncTimeout: Double = 5,
+         wipe: (@MainActor (AppModel, ModelContext) throws -> Void)? = nil) throws {
         store = InMemoryTokenStore(session)
         defaults = UserDefaults(suiteName: "AppModelTests-\(UUID().uuidString)")!
         if let lastUsername { defaults.set(lastUsername, forKey: AuthService.lastUsernameKey) }
@@ -147,7 +158,8 @@ final class AppFixture {
         let syncTransport = self.syncTransport
         let deps = AppModel.Dependencies(
             makeTransport: { client in
-                realSyncTransport ? ClientSyncTransport(client: client) as any SyncTransport : syncTransport
+                if hangingSync { return HangingSyncTransport() }
+                return realSyncTransport ? ClientSyncTransport(client: client) as any SyncTransport : syncTransport
             },
             makeCursor: { [unowned self] url, user in
                 self.cursor(url, user)
@@ -156,7 +168,11 @@ final class AppFixture {
                 let s = FakeScheduler()
                 self.schedulers.append(s)
                 return s
-            })
+            },
+            wipeStore: { [unowned self] context in
+                if let wipe { try wipe(self.model, context) } else { try AppModel.deleteAllRecords(in: context) }
+            },
+            logoutSyncTimeout: logoutSyncTimeout)
         model = AppModel(container: container, auth: auth, defaults: defaults, dependencies: deps)
     }
 

@@ -4,6 +4,7 @@ import HaushaltsbuchData
 /// Fehlertext für die Oberfläche; `nil` bei Abbruch.
 func userMessage(for error: any Error) -> String? {
     if let input = error as? AppModel.InputError { return input.germanMessage }
+    if let failed = error as? AppModel.SwitchError { return failed.germanMessage }
     let api = APIError(error)
     return api == .cancelled ? nil : api.germanMessage
 }

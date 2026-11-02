@@ -162,6 +162,78 @@ import HaushaltsbuchData
     #expect(f.model.phase == .locked)
 }
 
+// MARK: Fix-Runde 1: sicherer Wechsel, begrenztes Abmelden
+
+struct WipeFailure: Error {}
+
+@MainActor @Test func switchKeepsLoginScreenUntilWipeSucceeded() async throws {
+    var phaseDuringWipe: AppModel.Phase?
+    var authDuringWipe: AuthState?
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna", wipe: { model, context in
+        phaseDuringWipe = model.phase
+        authDuringWipe = model.auth.state
+        try AppModel.deleteAllRecords(in: context)
+    })
+    try f.addPendingTransaction()
+    f.transport.enqueue("logout", .empty(204))
+    await f.model.logout()
+
+    f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.bertId, username: "bert"))
+    let outcome = try await f.model.login(username: "bert", password: "geheim123", discardPending: true)
+
+    // Beim Leeren ist Bert schon angemeldet, die Oberfläche zeigt aber weiter die Anmeldung.
+    guard case .loggedIn = try #require(authDuringWipe) else { Issue.record("nicht angemeldet"); return }
+    #expect(phaseDuringWipe == .locked)
+    #expect(outcome == .loggedIn)
+    #expect(f.model.phase == .ready)
+}
+
+@MainActor @Test func failedWipeLogsOutAgainAndKeepsSwitchPending() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna",
+                           wipe: { _, _ in throw WipeFailure() })
+    try f.addPendingTransaction()
+    f.transport.enqueue("logout", .empty(204))
+    await f.model.logout()
+    let schedulersBefore = f.schedulers.count
+
+    f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.bertId, username: "bert"))
+    f.transport.enqueue("logout", .empty(204))
+    await #expect(throws: AppModel.SwitchError.localDataNotCleared) {
+        try await f.model.login(username: "bert", password: "geheim123", discardPending: true)
+    }
+
+    #expect(AppModel.SwitchError.localDataNotCleared.germanMessage
+            == "Lokale Daten konnten nicht gelöscht werden. Bitte erneut versuchen.")
+    #expect(f.store.load() == nil)                       // neue Sitzung verworfen
+    #expect(f.transport.calls("logout") == 2)            // Bert-Refresh-Token widerrufen
+    #expect(f.model.phase == .locked)
+    #expect(f.model.engine == nil)
+    #expect(f.schedulers.count == schedulersBefore)      // kein Sync auf Annas Daten
+    #expect(try f.count(TransactionEntity.self) == 1)
+    // Bert ist jetzt `lastUsername`, die Daten gehören aber weiter Anna → erneut Rückfrage.
+    let retry = try await f.model.login(username: "bert", password: "geheim123")
+    #expect(retry == .needsDiscardConfirmation(pending: 2))
+}
+
+@MainActor @Test func logoutSyncIsBounded() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna",
+                           hangingSync: true, logoutSyncTimeout: 0.05)
+    f.transport.enqueue("logout", .empty(204))
+    let start = ContinuousClock.now
+    await f.model.logout()
+    #expect(ContinuousClock.now - start < .seconds(2))
+    #expect(f.model.phase == .locked)
+    #expect(f.store.load() == nil)
+}
+
+@MainActor @Test func runBoundedReturnsEarlyWhenWorkFinishes() async {
+    let start = ContinuousClock.now
+    var ran = false
+    await AppModel.runBounded(seconds: 10) { ran = true }
+    #expect(ran)
+    #expect(ContinuousClock.now - start < .seconds(2))
+}
+
 // MARK: Hilfsfunktionen
 
 @Test func normalizesServerInput() {
