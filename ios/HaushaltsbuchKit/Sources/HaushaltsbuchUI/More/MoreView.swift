@@ -6,7 +6,8 @@ import HaushaltsbuchData
 struct MoreView: View {
     @Environment(AppModel.self) private var app
     @State private var loggingOut = false
-    @State private var discardPending: Int?
+    @State private var discardPending: PendingChanges?
+    @State private var failure: String?
 
     var body: some View {
         List {
@@ -56,18 +57,23 @@ struct MoreView: View {
                 .disabled(loggingOut)
                 .accessibilityIdentifier("more.logout")
                 .confirmationDialog(
-                    discardPending.map(ServerStatusText.logoutWarning) ?? "",
+                    discardPending.map { ServerStatusText.logoutWarning($0.unsent, rejected: $0.rejected) } ?? "",
                     isPresented: Binding(get: { discardPending != nil }, set: { if !$0 { discardPending = nil } }),
                     titleVisibility: .visible
                 ) {
                     Button("Trotzdem abmelden", role: .destructive) { logout(discard: true) }
                     Button("Abbrechen", role: .cancel) {}
                 } message: {
-                    Text(discardPending.map(ServerStatusText.logoutDetail) ?? "")
+                    Text(discardPending.map { ServerStatusText.logoutDetail($0.unsent, rejected: $0.rejected) } ?? "")
                 }
             }
         }
         .navigationTitle("Mehr")
+        .alert("Abmelden nicht möglich", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(failure ?? "")
+        }
     }
 
     private func logout(discard: Bool) {
@@ -75,7 +81,14 @@ struct MoreView: View {
         Task {
             let outcome = await app.logout(discardPending: discard)
             loggingOut = false
-            if case let .needsDiscardConfirmation(pending) = outcome { discardPending = pending }
+            switch outcome {
+            case let .needsDiscardConfirmation(pending, rejected):
+                discardPending = PendingChanges(unsent: pending, rejected: rejected)
+            case let .failed(message):
+                failure = message
+            case .loggedOut:
+                break
+            }
         }
     }
 }

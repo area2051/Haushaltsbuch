@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import SwiftUI
 import Testing
+import HaushaltsbuchCore
 import HaushaltsbuchData
 @testable import HaushaltsbuchUI
 
@@ -90,7 +91,7 @@ import HaushaltsbuchData
     #expect(f.model.engine == nil)
     #expect(f.model.loginPrefill == "anna")
     #expect(try f.count(TransactionEntity.self) == 1)
-    #expect(f.model.repository.pendingChangesCount == 2)
+    #expect(try f.model.repository.pendingChanges().unsent == 2)
 
     // Gleicher Benutzer meldet sich wieder an: keine Rückfrage, Daten bleiben, neuer Scheduler.
     f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.annaId, username: "anna"))
@@ -376,6 +377,74 @@ struct WipeFailure: Error {}
     #expect(f.model.phase == .locked)
     #expect(f.store.load() == nil)
     #expect(f.model.engine == nil)
+}
+
+// MARK: Final-Review: Rückfragen vor Datenverlust
+
+struct CountFailure: Error {}
+
+@MainActor @Test func logoutRefusesToWipeWhenPendingCountFails() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna",
+                           countPending: { _ in throw CountFailure() })
+    f.syncTransport.isOnline = true
+    try f.addPendingTransaction()
+    let outcome = await f.model.logout()
+    #expect(outcome == .failed(AppModel.pendingUnknownMessage))
+    #expect(f.model.phase == .ready)
+    #expect(f.store.load() != nil)
+    #expect(f.transport.calls("logout") == 0)
+    #expect(try f.count(TransactionEntity.self) == 1)
+}
+
+@MainActor @Test func switchRefusesWhenPendingCountFails() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna",
+                           countPending: { _ in throw CountFailure() })
+    try f.addPendingTransaction()
+    await f.expireSession()
+    await #expect(throws: AppModel.SwitchError.pendingChangesUnknown) {
+        try await f.model.login(username: "bert", password: "geheim123")
+    }
+    #expect(f.transport.calls("login") == 0)
+    #expect(try f.count(TransactionEntity.self) == 1)
+    #expect(AppModel.SwitchError.pendingChangesUnknown.germanMessage.contains("nicht geprüft"))
+}
+
+@MainActor @Test func rejectedChangesRequireConfirmationToo() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna")
+    f.syncTransport.isOnline = true
+    let tx = try f.addPendingTransaction()
+    // Kategorie und Buchung synchronisiert, die Buchung aber abgelehnt (nicht mehr dirty).
+    for c in try f.container.mainContext.fetch(FetchDescriptor<CategoryEntity>()) { c.isDirty = false }
+    tx.isDirty = false
+    tx.rejectionReason = "unknown_user"
+    try f.container.mainContext.save()
+
+    #expect(await f.model.logout() == .needsDiscardConfirmation(pending: 0, rejected: 1))
+    #expect(try f.count(TransactionEntity.self) == 1)
+
+    await f.expireSession()
+    let other = try await f.model.login(username: "bert", password: "geheim123")
+    #expect(other == .needsDiscardConfirmation(pending: 0, rejected: 1))
+}
+
+@Test func confirmationTextsMentionRejected() {
+    #expect(ServerStatusText.logoutWarning(0, rejected: 1) == "1 Änderung geht verloren")
+    #expect(ServerStatusText.logoutWarning(2, rejected: 1) == "3 Änderungen gehen verloren")
+    #expect(ServerStatusText.logoutDetail(0, rejected: 2)
+            == "2 vom Server abgelehnte Änderungen gehen beim Abmelden verloren.")
+    #expect(ServerStatusText.logoutDetail(1, rejected: 1)
+            == "1 Änderung konnte nicht übertragen werden und geht beim Abmelden verloren. 1 vom Server abgelehnte Änderung geht beim Abmelden ebenfalls verloren.")
+    let p = PendingChanges(unsent: 1, rejected: 2)
+    #expect(DiscardConfirmation.title(p) == "3 Änderungen verwerfen?")
+    #expect(DiscardConfirmation.message(p).hasSuffix("2 davon wurden vom Server abgelehnt."))
+}
+
+@Test func budgetRowsCarryRejection() {
+    let cat = CategoryValue(id: UUID(), name: "Essen", icon: "cart", color: "#112233", kind: .expense,
+                            sortOrder: 0, archived: false)
+    let rows = BudgetsModel.rows(categories: [cat], budgets: [], txs: [],
+                                 month: CalendarDay.today().monthKey, rejections: [cat.id: "unique_violation"])
+    #expect(rows.first?.rejectionReason == "unique_violation")
 }
 
 // MARK: Hilfsfunktionen

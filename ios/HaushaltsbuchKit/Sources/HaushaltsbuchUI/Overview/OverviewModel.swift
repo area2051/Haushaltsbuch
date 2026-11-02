@@ -72,6 +72,8 @@ enum OverviewModel {
 struct BudgetRowData: Equatable, Identifiable {
     var category: CategoryValue
     var progress: BudgetProgress?
+    /// Vom Server abgelehntes Budget dieser Kategorie (Rohgrund).
+    var rejectionReason: String? = nil
     var id: UUID { category.id }
 
     var detail: String {
@@ -81,12 +83,13 @@ struct BudgetRowData: Equatable, Identifiable {
 }
 
 enum BudgetsModel {
+    /// `budgets` höchstens eins je Kategorie (`BudgetEntity.onePerCategory`); `rejections` je Kategorie-ID.
     static func rows(categories: [CategoryValue], budgets: [BudgetValue], txs: [TxValue],
-                     month: MonthKey) -> [BudgetRowData] {
+                     month: MonthKey, rejections: [UUID: String] = [:]) -> [BudgetRowData] {
         let progress = Dictionary(Analytics.budgetProgress(budgets, txs: txs, month: month).map { ($0.categoryId, $0) },
                                   uniquingKeysWith: { a, _ in a })
         return categories.filter { $0.kind == .expense && !$0.archived }
             .sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
-            .map { BudgetRowData(category: $0, progress: progress[$0.id]) }
+            .map { BudgetRowData(category: $0, progress: progress[$0.id], rejectionReason: rejections[$0.id]) }
     }
 }

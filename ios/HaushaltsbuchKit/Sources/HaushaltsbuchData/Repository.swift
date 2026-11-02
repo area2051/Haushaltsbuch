@@ -2,6 +2,22 @@ import Foundation
 import SwiftData
 import HaushaltsbuchCore
 
+/// Was beim Abmelden/Benutzerwechsel verloren ginge.
+public struct PendingChanges: Equatable, Sendable {
+    /// Noch nicht übertragene Änderungen (`isDirty`).
+    public var unsent: Int
+    /// Vom Server abgelehnte, noch nicht aufgelöste Änderungen.
+    public var rejected: Int
+
+    public init(unsent: Int, rejected: Int) {
+        self.unsent = unsent
+        self.rejected = rejected
+    }
+
+    public var total: Int { unsent + rejected }
+    public var isEmpty: Bool { total == 0 }
+}
+
 public enum RepositoryError: Error, Equatable {
     case notFound
     case invalid(String)
@@ -41,8 +57,9 @@ public final class Repository {
         return all.filter { $0.kind == kind.rawValue }
     }
 
+    /// Höchstens eins je Kategorie (`BudgetEntity.onePerCategory`).
     public func activeBudgets() -> [BudgetEntity] {
-        fetchOrEmpty(FetchDescriptor<BudgetEntity>(predicate: #Predicate { !$0.softDeleted }))
+        BudgetEntity.onePerCategory(fetchOrEmpty(FetchDescriptor<BudgetEntity>(predicate: #Predicate { !$0.softDeleted })))
     }
 
     public func activeRules() -> [RecurringRuleEntity] {
@@ -57,15 +74,18 @@ public final class Repository {
             sortBy: [SortDescriptor(\.displayName)]))
     }
 
-    /// Anzeigewert; bei Lesefehler 0.
-    public var pendingChangesCount: Int {
-        let counts = try? [
-            count(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.isDirty })),
-            count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.isDirty })),
-            count(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.isDirty })),
-            count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.isDirty })),
-        ]
-        return counts?.reduce(0, +) ?? 0
+    /// Ungesendete und abgelehnte Änderungen über alle Typen. Wirft bei Lesefehlern – Aufrufer, die
+    /// danach Daten löschen würden, dürfen einen Fehler nie als „nichts ausstehend“ werten.
+    public func pendingChanges() throws -> PendingChanges {
+        let unsent = try count(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.isDirty }))
+            + count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.isDirty }))
+            + count(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.isDirty }))
+            + count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.isDirty }))
+        let rejected = try count(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.rejectionReason != nil }))
+            + count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.rejectionReason != nil }))
+            + count(FetchDescriptor<BudgetEntity>(predicate: #Predicate { $0.rejectionReason != nil }))
+            + count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.rejectionReason != nil }))
+        return PendingChanges(unsent: unsent, rejected: rejected)
     }
 
     // MARK: Buchungen
@@ -159,9 +179,16 @@ public final class Repository {
 
     // MARK: Budgets
 
+    /// Schreibt in das bevorzugte Budget der Kategorie (`BudgetEntity.onePerCategory`); nie
+    /// synchronisierte Dubletten (z. B. abgelehnt, weil ein anderes Gerät schneller war) werden
+    /// dabei hart gelöscht.
     public func setBudget(categoryId: UUID, monthlyLimitCents: Int?) throws {
-        let existing = try fetch(FetchDescriptor<BudgetEntity>(
-            predicate: #Predicate { $0.categoryId == categoryId && !$0.softDeleted })).first
+        let all = try fetch(FetchDescriptor<BudgetEntity>(
+            predicate: #Predicate { $0.categoryId == categoryId && !$0.softDeleted }))
+        let existing = BudgetEntity.onePerCategory(all).first
+        let duplicates = all.filter { $0 !== existing && $0.version == nil }
+        if existing == nil && monthlyLimitCents == nil { return }
+        for d in duplicates { context.delete(d) }
         switch (existing, monthlyLimitCents) {
         case let (b?, limit?):
             b.monthlyLimitCents = limit

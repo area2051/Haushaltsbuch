@@ -195,13 +195,26 @@ enum ServerStatusText {
         }
     }
 
-    /// Text unter der Rückfrage (ohne Annahme über die Ursache).
-    static func logoutDetail(_ n: Int) -> String {
-        n == 1 ? "1 Änderung konnte nicht übertragen werden und geht beim Abmelden verloren."
-            : "\(n) Änderungen konnten nicht übertragen werden und gehen beim Abmelden verloren."
+    /// Text unter der Rückfrage (ohne Annahme über die Ursache); `rejected` = vom Server abgelehnte.
+    static func logoutDetail(_ n: Int, rejected r: Int = 0) -> String {
+        var parts: [String] = []
+        if n > 0 {
+            parts.append(n == 1 ? "1 Änderung konnte nicht übertragen werden und geht beim Abmelden verloren."
+                : "\(n) Änderungen konnten nicht übertragen werden und gehen beim Abmelden verloren.")
+        }
+        if r > 0 {
+            let also = n > 0 ? "ebenfalls " : ""
+            parts.append(r == 1 ? "1 vom Server abgelehnte Änderung geht beim Abmelden \(also)verloren."
+                : "\(r) vom Server abgelehnte Änderungen gehen beim Abmelden \(also)verloren.")
+        }
+        return parts.joined(separator: " ")
     }
 
-    static func logoutWarning(_ n: Int) -> String {
-        n == 1 ? "1 ungesendete Änderung geht verloren" : "\(n) ungesendete Änderungen gehen verloren"
+    static func logoutWarning(_ n: Int, rejected r: Int = 0) -> String {
+        if r == 0 {
+            return n == 1 ? "1 ungesendete Änderung geht verloren" : "\(n) ungesendete Änderungen gehen verloren"
+        }
+        let total = n + r
+        return total == 1 ? "1 Änderung geht verloren" : "\(total) Änderungen gehen verloren"
     }
 }

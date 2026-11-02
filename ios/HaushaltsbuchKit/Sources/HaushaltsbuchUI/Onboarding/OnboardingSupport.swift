@@ -25,12 +25,23 @@ struct ErrorText: View {
 
 /// Rückfrage vor dem Verwerfen ungesendeter Änderungen beim Benutzerwechsel.
 struct DiscardConfirmation: ViewModifier {
-    @Binding var pending: Int?
+    @Binding var pending: PendingChanges?
     let onConfirm: () -> Void
+
+    static func title(_ p: PendingChanges) -> String {
+        p.rejected == 0 ? "\(p.unsent) ungesendete Änderungen verwerfen?" : "\(p.total) Änderungen verwerfen?"
+    }
+
+    static func message(_ p: PendingChanges) -> String {
+        let base = "Auf diesem Gerät liegen noch Änderungen eines anderen Kontos, die nicht an den Server gesendet wurden."
+        guard p.rejected > 0 else { return base }
+        return base + (p.rejected == 1 ? " 1 davon wurde vom Server abgelehnt."
+                       : " \(p.rejected) davon wurden vom Server abgelehnt.")
+    }
 
     func body(content: Content) -> some View {
         content.alert(
-            "\(pending ?? 0) ungesendete Änderungen verwerfen?",
+            pending.map(Self.title) ?? "",
             isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
         ) {
             Button("Verwerfen", role: .destructive) {
@@ -39,7 +50,7 @@ struct DiscardConfirmation: ViewModifier {
             }
             Button("Abbrechen", role: .cancel) { pending = nil }
         } message: {
-            Text("Auf diesem Gerät liegen noch Änderungen eines anderen Kontos, die nicht an den Server gesendet wurden.")
+            Text(pending.map(Self.message) ?? "")
         }
     }
 }

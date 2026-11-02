@@ -29,7 +29,7 @@ import HaushaltsbuchCore
         #expect(!e.isDirty)
         #expect(e.version != nil)
     }
-    #expect(f.repo.pendingChangesCount == 0)
+    #expect(try f.repo.pendingChanges().unsent == 0)
     #expect(f.engine.status == .upToDate(SyncFixture.now))
 }
 
@@ -270,7 +270,7 @@ import HaushaltsbuchCore
     #expect(reqs.map(\.lastVersion) == [0, 500, 1000])
     let allIds = reqs.flatMap { $0.changes.transactions?.map(\.id) ?? [] }
     #expect(Set(allIds).count == 1200)
-    #expect(f.repo.pendingChangesCount == 0)
+    #expect(try f.repo.pendingChanges().unsent == 0)
     #expect(f.cursor.lastVersion == 1201)
 }
 
@@ -634,4 +634,33 @@ private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
     // Danach startet die Engine keinen Durchlauf mehr.
     await f.engine.syncNow()
     #expect(f.transport.requests.count == 1)
+}
+
+// MARK: Zwei Geräte legen gleichzeitig ein Budget an (Final-Review Finding 3)
+
+@MainActor @Test func rejectedDuplicateBudgetLeavesOneActiveBudget() async throws {
+    let f = try SyncFixture()
+    let cat = try f.makeCategory()
+    await f.engine.syncNow()
+
+    // Dieses Gerät legt ein Budget an; der Server lehnt ab und liefert das des anderen Geräts.
+    try f.repo.setBudget(categoryId: cat.id, monthlyLimitCents: 20000)
+    let mine = try #require(try f.all(BudgetEntity.self).first)
+    let theirsId = UUID()
+    f.server.rejected = [.init(id: lower(mine.id), reason: "unique_violation", table: "budgets")]
+    f.server.extra.budgets = [.init(categoryId: lower(cat.id), deleted: false, id: lower(theirsId),
+                                    monthlyLimitCents: 30000, version: 50)]
+    await f.engine.syncNow()
+
+    #expect(mine.rejectionReason == "unique_violation")
+    #expect(try f.all(BudgetEntity.self).count == 2)
+    let active = f.repo.activeBudgets()
+    #expect(active.count == 1)
+    #expect(active.first?.id == theirsId)
+    #expect(active.first?.monthlyLimitCents == 30000)
+
+    // Verwerfen (nie synchronisiert) löscht die Dublette hart.
+    try f.repo.discardRejected(mine)
+    #expect(try f.all(BudgetEntity.self).map(\.id) == [theirsId])
+    #expect(f.refetchRequests == 0)
 }

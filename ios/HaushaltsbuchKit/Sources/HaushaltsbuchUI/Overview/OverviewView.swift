@@ -27,7 +27,7 @@ struct OverviewView: View {
         let byId = Dictionary(entities.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let data = OverviewModel.make(
             txs: TransactionListModel.activeValues(of: entities), categories: categories, members: names,
-            budgets: budgetEntities.filter { !$0.deleted }.map(\.value), month: month)
+            budgets: BudgetEntity.onePerCategory(budgetEntities).map(\.value), month: month)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {

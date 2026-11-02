@@ -142,12 +142,12 @@ private struct Fixture {
 
 @MainActor @Test func pendingChangesCountCountsAllTypes() throws {
     let f = try Fixture()
-    #expect(f.repo.pendingChangesCount == 0)
+    #expect(try f.repo.pendingChanges().unsent == 0)
     try f.addTx()
     _ = try f.makeCategory()
     try f.repo.setBudget(categoryId: f.cat, monthlyLimitCents: 100)
     try f.repo.saveRule(f.ruleDraft())
-    #expect(f.repo.pendingChangesCount == 4)
+    #expect(try f.repo.pendingChanges().unsent == 4)
 }
 
 @MainActor @Test func writesCallOnChange() throws {
@@ -262,4 +262,41 @@ private struct Fixture {
     #expect(again === rule)
     #expect(rule.amountCents == 7000 && rule.frequency == "weekly" && rule.endDate == "2027-01-01")
     #expect(rule.value.frequency == .weekly)
+}
+
+// MARK: Final-Review: abgelehnte zählen mit, Budgets je Kategorie eindeutig
+
+@MainActor @Test func pendingChangesCountsRejectedSeparately() throws {
+    let f = try Fixture()
+    let tx = try f.addTx()
+    try f.addTx()
+    tx.rejectionReason = "unknown_user"
+    tx.isDirty = false
+    try f.container.mainContext.save()
+    #expect(try f.repo.pendingChanges() == PendingChanges(unsent: 1, rejected: 1))
+    #expect(try f.repo.pendingChanges().total == 2)
+}
+
+@MainActor @Test func activeBudgetsPreferSyncedRowPerCategory() throws {
+    let f = try Fixture()
+    let ctx = f.container.mainContext
+    let synced = BudgetEntity(categoryId: f.cat, monthlyLimitCents: 30000, version: 5)
+    let rejected = BudgetEntity(categoryId: f.cat, monthlyLimitCents: 20000)
+    rejected.rejectionReason = "unique_violation"
+    let other = BudgetEntity(categoryId: UUID(), monthlyLimitCents: 100)
+    for b in [rejected, synced, other] { ctx.insert(b) }
+    try ctx.save()
+
+    let active = f.repo.activeBudgets()
+    #expect(active.count == 2)
+    #expect(active.first { $0.categoryId == f.cat } === synced)
+    #expect(BudgetEntity.onePerCategory([rejected, synced, other]).count == 2)
+    #expect(BudgetEntity.onePerCategory([synced, rejected]).first === synced)
+
+    // Bearbeiten schreibt ins synchronisierte Budget und räumt die nie synchronisierte Dublette weg.
+    try f.repo.setBudget(categoryId: f.cat, monthlyLimitCents: 25000)
+    #expect(synced.monthlyLimitCents == 25000)
+    #expect(synced.isDirty)
+    let left = try ctx.fetch(FetchDescriptor<BudgetEntity>()).filter { $0.categoryId == f.cat }
+    #expect(left.count == 1)
 }

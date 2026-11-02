@@ -159,7 +159,8 @@ final class AppFixture {
     ///   (für Tests mit Token-Ablauf); sonst `syncTransport`.
     init(session: StoredSession? = nil, lastUsername: String? = nil, realSyncTransport: Bool = false,
          hangingSync: Bool = false, logoutSyncTimeout: Double = 5, logoutRevokeTimeout: Double = 5,
-         wipe: (@MainActor (AppModel, ModelContext) throws -> Void)? = nil) throws {
+         wipe: (@MainActor (AppModel, ModelContext) throws -> Void)? = nil,
+         countPending: (@MainActor (Repository) throws -> PendingChanges)? = nil) throws {
         store = InMemoryTokenStore(session)
         defaults = UserDefaults(suiteName: "AppModelTests-\(UUID().uuidString)")!
         if let lastUsername { defaults.set(lastUsername, forKey: AuthService.lastUsernameKey) }
@@ -188,7 +189,8 @@ final class AppFixture {
                 if let wipe { try wipe(self.model, context) } else { try AppModel.deleteAllRecords(in: context) }
             },
             logoutSyncTimeout: logoutSyncTimeout,
-            logoutRevokeTimeout: logoutRevokeTimeout)
+            logoutRevokeTimeout: logoutRevokeTimeout,
+            countPending: countPending ?? { try $0.pendingChanges() })
         model = AppModel(container: container, auth: auth, defaults: defaults, dependencies: deps)
     }
 

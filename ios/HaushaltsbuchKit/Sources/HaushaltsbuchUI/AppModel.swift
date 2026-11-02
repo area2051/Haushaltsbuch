@@ -43,23 +43,33 @@ public final class AppModel {
 
     public enum LogoutOutcome: Equatable, Sendable {
         case loggedOut
-        /// Nach dem Sync-Versuch noch ungesendete Änderungen: erst nach Bestätigung verwerfen.
-        case needsDiscardConfirmation(pending: Int)
+        /// Nach dem Sync-Versuch noch ungesendete (`pending`) oder abgelehnte (`rejected`)
+        /// Änderungen: erst nach Bestätigung verwerfen.
+        case needsDiscardConfirmation(pending: Int, rejected: Int = 0)
+        /// Nichts gelöscht (z. B. ausstehende Änderungen nicht prüfbar); Text für die Oberfläche.
+        case failed(String)
     }
 
     public enum AuthOutcome: Equatable, Sendable {
         case loggedIn
-        /// Anderer Benutzer/Server, aber ungesendete Änderungen: erst nach Bestätigung verwerfen.
-        case needsDiscardConfirmation(pending: Int)
+        /// Anderer Benutzer/Server, aber ungesendete/abgelehnte Änderungen: erst nach Bestätigung verwerfen.
+        case needsDiscardConfirmation(pending: Int, rejected: Int = 0)
     }
+
+    nonisolated static let pendingUnknownMessage =
+        "Ausstehende Änderungen konnten nicht geprüft werden. Es wurde nichts gelöscht. Bitte erneut versuchen."
+
 
     /// Benutzerwechsel gescheitert: alte Daten nicht gelöscht, die neue Sitzung wurde verworfen.
     public enum SwitchError: Error, Equatable {
         case localDataNotCleared
+        /// Ausstehende Änderungen nicht zählbar: nichts verworfen.
+        case pendingChangesUnknown
 
         public var germanMessage: String {
             switch self {
             case .localDataNotCleared: "Lokale Daten konnten nicht gelöscht werden. Bitte erneut versuchen."
+            case .pendingChangesUnknown: AppModel.pendingUnknownMessage
             }
         }
     }
@@ -85,19 +95,23 @@ public final class AppModel {
         public var logoutSyncTimeout: Double
         /// Höchstdauer des Token-Widerrufs beim Abmelden (offline sonst bis zum Request-Timeout).
         public var logoutRevokeTimeout: Double
+        /// Zählt ungesendete/abgelehnte Änderungen vor dem Löschen (Tests lassen es scheitern).
+        public var countPending: @MainActor (Repository) throws -> PendingChanges
 
         public init(makeTransport: @escaping @MainActor (Client) -> any SyncTransport,
                     makeCursor: @escaping @MainActor (URL, UUID) -> any SyncCursorStore,
                     makeScheduler: @escaping @MainActor (SyncEngine) -> any SyncScheduling,
                     wipeStore: @escaping @MainActor (ModelContext) throws -> Void = { try AppModel.deleteAllRecords(in: $0) },
                     logoutSyncTimeout: Double = 5,
-                    logoutRevokeTimeout: Double = 5) {
+                    logoutRevokeTimeout: Double = 5,
+                    countPending: @escaping @MainActor (Repository) throws -> PendingChanges = { try $0.pendingChanges() }) {
             self.makeTransport = makeTransport
             self.makeCursor = makeCursor
             self.makeScheduler = makeScheduler
             self.wipeStore = wipeStore
             self.logoutSyncTimeout = logoutSyncTimeout
             self.logoutRevokeTimeout = logoutRevokeTimeout
+            self.countPending = countPending
         }
 
         public static func live(defaults: UserDefaults = .standard) -> Dependencies {
@@ -231,9 +245,16 @@ public final class AppModel {
                 await engine.syncNow()
             }
         }
-        let pending = repository.pendingChangesCount
-        if pending > 0 && !discardPending {
-            return .needsDiscardConfirmation(pending: pending)
+        if !discardPending {
+            // Zählfehler nie als „nichts ausstehend“ werten: dann lieber gar nicht löschen.
+            let pending: PendingChanges
+            do { pending = try dependencies.countPending(repository) } catch {
+                logger.error("Ausstehende Änderungen nicht zählbar: \(String(describing: error), privacy: .public)")
+                return .failed(Self.pendingUnknownMessage)
+            }
+            if !pending.isEmpty {
+                return .needsDiscardConfirmation(pending: pending.unsent, rejected: pending.rejected)
+            }
         }
         let session = self.session
         deactivate()
@@ -314,9 +335,15 @@ public final class AppModel {
         if switching {
             // Mit noch gültiger Sitzung zuerst senden (sonst hat `logout()` es schon versucht).
             await engine?.syncNow()
-            let pending = repository.pendingChangesCount
-            if pending > 0 && !discardPending {
-                return .needsDiscardConfirmation(pending: pending)
+            if !discardPending {
+                let pending: PendingChanges
+                do { pending = try dependencies.countPending(repository) } catch {
+                    logger.error("Ausstehende Änderungen nicht zählbar: \(String(describing: error), privacy: .public)")
+                    throw SwitchError.pendingChangesUnknown
+                }
+                if !pending.isEmpty {
+                    return .needsDiscardConfirmation(pending: pending.unsent, rejected: pending.rejected)
+                }
             }
         }
         holdActivation = switching

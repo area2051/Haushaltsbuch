@@ -1,4 +1,5 @@
 import SwiftUI
+import HaushaltsbuchData
 
 /// Schritt 2a (`setupRequired`): erstes Admin-Konto anlegen, danach automatisch angemeldet.
 struct SetupView: View {
@@ -8,7 +9,7 @@ struct SetupView: View {
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
-    @State private var pendingToDiscard: Int?
+    @State private var pendingToDiscard: PendingChanges?
 
     var body: some View {
         Form {
@@ -62,7 +63,9 @@ struct SetupView: View {
                     username: username.trimmingCharacters(in: .whitespaces),
                     displayName: displayName.trimmingCharacters(in: .whitespaces),
                     password: password, discardPending: discard)
-                if case let .needsDiscardConfirmation(pending) = outcome { pendingToDiscard = pending }
+                if case let .needsDiscardConfirmation(pending, rejected) = outcome {
+                    pendingToDiscard = PendingChanges(unsent: pending, rejected: rejected)
+                }
             } catch {
                 self.error = userMessage(for: error)
             }

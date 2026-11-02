@@ -1,4 +1,5 @@
 import SwiftUI
+import HaushaltsbuchData
 
 /// Schritt 2b: anmelden. Nach Ablauf der Sitzung mit dem letzten Benutzernamen vorausgefüllt;
 /// lokale Daten bleiben erhalten.
@@ -8,7 +9,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
-    @State private var pendingToDiscard: Int?
+    @State private var pendingToDiscard: PendingChanges?
 
     init(prefill: String) {
         _username = State(initialValue: prefill)
@@ -63,7 +64,9 @@ struct LoginView: View {
                 let outcome = try await model.login(
                     username: username.trimmingCharacters(in: .whitespaces),
                     password: password, discardPending: discard)
-                if case let .needsDiscardConfirmation(pending) = outcome { pendingToDiscard = pending }
+                if case let .needsDiscardConfirmation(pending, rejected) = outcome {
+                    pendingToDiscard = PendingChanges(unsent: pending, rejected: rejected)
+                }
             } catch {
                 self.error = userMessage(for: error)
             }
