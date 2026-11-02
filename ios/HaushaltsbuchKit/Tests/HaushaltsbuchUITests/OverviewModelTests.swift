@@ -76,3 +76,16 @@ private let members = [anna: "Anna", bert: "Bert"]
     #expect(rows[1].detail == "\(Money.format(cents: 12000)) von \(Money.format(cents: 30000))")
     #expect(rows[0].detail == "Kein Budget")
 }
+
+@Test func overviewWarningsIgnoreArchivedAndDeletedCategories() {
+    let live = cat("Essen"), archived = cat("Alt", archived: true)
+    let deletedId = UUID()   // Kategorie gelöscht → nicht mehr in `categories`
+    let txs = [tx(2000, 1, live), tx(2000, 2, archived),
+               TxValue(id: UUID(), amountCents: 2000, kind: .expense, categoryId: deletedId,
+                       day: CalendarDay(year: 2026, month: 11, day: 3)!, paidBy: anna, note: nil)]
+    let budgets = [BudgetValue(categoryId: live.id, monthlyLimitCents: 1000),
+                   BudgetValue(categoryId: archived.id, monthlyLimitCents: 1000),
+                   BudgetValue(categoryId: deletedId, monthlyLimitCents: 1000)]
+    let data = OverviewModel.make(txs: txs, categories: [live, archived], members: members, budgets: budgets, month: nov)
+    #expect(data.warnings.map(\.categoryId) == [live.id])
+}

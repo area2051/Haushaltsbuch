@@ -18,7 +18,7 @@ struct OverviewData: Equatable {
     var summary: MonthSummary
     var byCategory: [ChartSlice]
     var byPerson: [ChartBar]
-    /// Nur .warning/.exceeded, schlimmste zuerst.
+    /// Nur .warning/.exceeded aktiver (nicht archivierter/gelöschter) Kategorien, schlimmste zuerst.
     var warnings: [BudgetProgress]
     /// Letzte 5 Buchungen des Monats (neueste zuerst).
     var recent: [TxValue]
@@ -48,7 +48,9 @@ enum OverviewModel {
             ChartBar(id: $0.userId, name: members[$0.userId] ?? "Unbekannt", cents: $0.cents)
         }
 
-        let warnings = Analytics.budgetProgress(budgets, txs: txs, month: month)
+        // Nur Budgets aktiver Kategorien: archivierte/gelöschte (fehlen in `categories`) nicht warnen.
+        let liveBudgets = budgets.filter { catById[$0.categoryId].map { !$0.archived } ?? false }
+        let warnings = Analytics.budgetProgress(liveBudgets, txs: txs, month: month)
             .filter { $0.level != .ok }
             .sorted { $0.ratio > $1.ratio }
 
