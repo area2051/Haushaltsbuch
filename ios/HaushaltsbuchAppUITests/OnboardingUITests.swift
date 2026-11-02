@@ -102,14 +102,14 @@ final class OnboardingUITests: XCTestCase {
     }
 
     /// Bei bestehender Sitzung (Schlüsselbund): Start direkt in der Hauptansicht, ein einzelner
-    /// Tipp wechselt den Tab. Ohne Sitzung übersprungen.
+    /// Tipp wechselt den Tab. Ohne Sitzung schlägt der Test fehl.
     @MainActor
     func testRelaunchStaysLoggedInAndTabsSwitchOnFirstTap() throws {
         let app = XCUIApplication()
         app.launch()
         guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("nur iPhone") }
         let budgets = app.tabBars.buttons["Budgets"]
-        guard budgets.waitForExistence(timeout: 10) else { throw XCTSkip("keine gespeicherte Sitzung") }
+        try requireExistence(budgets, timeout: 10, "keine gespeicherte Sitzung – vorher anmelden")
         waitUntilHittable(budgets)
         budgets.tap()
         XCTAssertTrue(app.navigationBars["Budgets"].waitForExistence(timeout: 3), "erster Tipp verloren")

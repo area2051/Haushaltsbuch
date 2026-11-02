@@ -12,7 +12,7 @@ final class QuickEntryUITests: XCTestCase {
         app.launch()
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let opener = isPad ? app.buttons["toolbar.add"] : app.tabBars.buttons["Neu"]
-        guard opener.waitForExistence(timeout: 15) else { throw XCTSkip("keine gespeicherte Sitzung") }
+        try requireExistence(opener, timeout: 15, "keine gespeicherte Sitzung – vorher anmelden")
         waitUntilHittable(opener)
         opener.tap()
         let amount = app.staticTexts["quickEntry.amount"]

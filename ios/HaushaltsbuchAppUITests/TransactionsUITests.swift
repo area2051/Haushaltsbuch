@@ -11,7 +11,7 @@ final class TransactionsUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         let opener = isPad ? app.buttons["toolbar.add"] : app.tabBars.buttons["Neu"]
-        guard opener.waitForExistence(timeout: 15) else { throw XCTSkip("keine gespeicherte Sitzung") }
+        try requireExistence(opener, timeout: 15, "keine gespeicherte Sitzung – vorher anmelden")
         waitUntilHittable(opener)
 
         // Zwei Ausgaben und eine Einnahme anlegen.

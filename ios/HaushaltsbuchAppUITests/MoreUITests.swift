@@ -18,7 +18,7 @@ final class MoreUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         let pw = app.secureTextFields["login.password"]
-        guard pw.waitForExistence(timeout: 10) else { throw XCTSkip("kein Anmeldebildschirm") }
+        try requireExistence(pw, timeout: 10, "kein Anmeldebildschirm – vorher abmelden")
         type(pw, try XCTUnwrap(env["HB_PASSWORD"]))
         app.buttons["login.submit"].tap()
         let opener = isPad ? app.buttons["toolbar.add"] : app.tabBars.buttons["Neu"]
@@ -213,7 +213,7 @@ final class MoreUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         let opener = isPad ? app.buttons["toolbar.add"] : app.tabBars.buttons["Neu"]
-        guard opener.waitForExistence(timeout: 15) else { throw XCTSkip("keine gespeicherte Sitzung") }
+        try requireExistence(opener, timeout: 15, "keine gespeicherte Sitzung – vorher anmelden")
         return app
     }
 

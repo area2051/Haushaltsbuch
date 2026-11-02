@@ -6,7 +6,8 @@ import XCTest
 ///
 /// Umgebung (`TEST_RUNNER_`-Präfix): `HB_PASSWORD` (Passwort des neuen Mitglieds), `HB_MEMBER_USERNAME` (Standard `anna`),
 /// `HB_AMOUNT` (Ziffern, z. B. `1111` = 11,11 €), `HB_EDIT_FROM` (Teil des Zeilentexts, z. B. `33,00`),
-/// `HB_SCREENSHOT_DIR`, `HB_SCREENSHOT_PREFIX`.
+/// `HB_EXPECT_ROWS` (für `testRefresh`: nach dem Aktualisieren erwartete Zeilentexte, durch `;` getrennt,
+/// z. B. `11,11;22,22`), `HB_SCREENSHOT_DIR`, `HB_SCREENSHOT_PREFIX`.
 final class EndToEndUITests: XCTestCase {
     private var env: [String: String] { ProcessInfo.processInfo.environment }
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
@@ -61,6 +62,8 @@ final class EndToEndUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 5)
         }
         openTransactions(app)
+        let added = row(app, containing: amountText(digits: digits))
+        XCTAssertTrue(added.waitForExistence(timeout: 10), "Neue Buchung \(amountText(digits: digits)) fehlt in der Liste")
         shot("after-add-\(digits)")
     }
 
@@ -76,6 +79,13 @@ final class EndToEndUITests: XCTestCase {
         start.press(forDuration: 0.1, thenDragTo: end)
         Thread.sleep(forTimeInterval: 6)
         XCTAssertTrue(app.descendants(matching: .any)["syncStatusBanner"].waitForNonExistence(timeout: 20), "Hinweis bleibt")
+        // Die vom anderen Gerät erwarteten Buchungen sind angekommen.
+        let expected = try XCTUnwrap(env["HB_EXPECT_ROWS"], "HB_EXPECT_ROWS fehlt")
+            .split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        XCTAssertFalse(expected.isEmpty, "HB_EXPECT_ROWS ist leer")
+        for text in expected {
+            XCTAssertTrue(row(app, containing: text).waitForExistence(timeout: 10), "Zeile \(text) fehlt nach dem Aktualisieren")
+        }
         shot("list")
     }
 
@@ -94,7 +104,9 @@ final class EndToEndUITests: XCTestCase {
         for _ in 0..<9 { app.buttons["quickEntry.key.delete"].tap() }
         for ch in digits { app.buttons["quickEntry.key.\(ch)"].tap() }
         app.buttons["edit.save"].tap()
-        XCTAssertTrue(amount.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(amount.waitForNonExistence(timeout: 5), "Bearbeiten-Sheet schließt nicht")
+        let edited = row(app, containing: amountText(digits: digits))
+        XCTAssertTrue(edited.waitForExistence(timeout: 10), "Geänderte Buchung \(amountText(digits: digits)) fehlt in der Liste")
         Thread.sleep(forTimeInterval: 3)
         shot("edited-\(digits)")
     }
@@ -108,9 +120,9 @@ final class EndToEndUITests: XCTestCase {
         shot(env["HB_SHOT_NAME"] ?? "list")
     }
 
-    /// Schnellerfassung: Tipp auf „Neu“/„+“ bis Sheet geschlossen (4 Ziffern + Kategorie). Zwei Messungen:
-    /// „elements“ löst jedes Element erst beim Tipp auf (XCUITest-typisch langsam, ~1 s pro Tipp); „coordinates“ liest
-    /// Frames vorab und tippt dann nur noch auf Koordinaten – näher an der reinen App-Reaktionszeit.
+    /// Schnellerfassung: Tipp auf „Neu“/„+“ bis Sheet geschlossen (4 Ziffern + Kategorie), gemessen mit
+    /// `XCTClockMetric` (kein Schwellwert; die Werte stehen im Testbericht). Frames werden vorab gelesen und
+    /// danach nur Koordinaten getippt – näher an der reinen App-Reaktionszeit als XCUITest-Elementabfragen.
     @MainActor
     func testQuickEntryTiming() throws {
         let app = try launch()
@@ -121,48 +133,33 @@ final class EndToEndUITests: XCTestCase {
             let f = e.frame
             return origin.withOffset(CGVector(dx: f.midX, dy: f.midY))
         }
-        var element: [TimeInterval] = []
-        var coord: [TimeInterval] = []
-        for run in 0..<4 {
+
+        // Vorab: Frames lesen (Sheet kurz öffnen, wieder schließen ohne Speichern).
+        waitUntilHittable(opener)
+        opener.tap()
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        let keyFrames = [1, 2, 5, 0].map { center(app.buttons["quickEntry.key.\($0)"]) }
+        let catFrame = center(app.buttons["quickEntry.category.Lebensmittel"])
+        let cancel = app.buttons["Abbrechen"]
+        if cancel.exists { cancel.tap() } else { app.swipeDown() }
+        XCTAssertTrue(amount.waitForNonExistence(timeout: 5))
+        let openCoord = center(opener)
+
+        let options = XCTMeasureOptions()
+        options.iterationCount = 4
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        measure(metrics: [XCTClockMetric()], options: options) {
             waitUntilHittable(opener)
             Thread.sleep(forTimeInterval: 1)
-            // Vorab: Frames lesen (Sheet kurz öffnen, wieder schließen ohne Speichern).
-            opener.tap()
-            XCTAssertTrue(amount.waitForExistence(timeout: 5))
-            let keyFrames = [1, 2, 5, 0].map { center(app.buttons["quickEntry.key.\($0)"]) }
-            let catFrame = center(app.buttons["quickEntry.category.Lebensmittel"])
-            let cancel = app.buttons["Abbrechen"]
-            if cancel.exists { cancel.tap() } else { app.swipeDown() }
-            XCTAssertTrue(amount.waitForNonExistence(timeout: 5))
-            Thread.sleep(forTimeInterval: 1)
-
-            if run % 2 == 0 {
-                let t0 = Date()
-                var marks: [String] = []
-                opener.tap()
-                XCTAssertTrue(amount.waitForExistence(timeout: 5))
-                marks.append(String(format: "open %.2f", Date().timeIntervalSince(t0)))
-                for d in [1, 2, 5, 0] { app.buttons["quickEntry.key.\(d)"].tap() }
-                marks.append(String(format: "keys %.2f", Date().timeIntervalSince(t0)))
-                app.buttons["quickEntry.category.Lebensmittel"].tap()
-                marks.append(String(format: "cat-tap %.2f", Date().timeIntervalSince(t0)))
-                XCTAssertTrue(amount.waitForNonExistence(timeout: 5))
-                element.append(Date().timeIntervalSince(t0))
-                print("HB_TIMING marks: \(marks)")
-            } else {
-                let openCoord = center(opener)
-                let t0 = Date()
-                openCoord.tap()
-                XCTAssertTrue(amount.waitForExistence(timeout: 5))
-                for k in keyFrames { k.tap() }
-                catFrame.tap()
-                XCTAssertTrue(amount.waitForNonExistence(timeout: 5))
-                coord.append(Date().timeIntervalSince(t0))
-            }
+            startMeasuring()
+            openCoord.tap()
+            XCTAssertTrue(amount.waitForExistence(timeout: 5), "Sheet öffnet nicht")
+            for k in keyFrames { k.tap() }
+            catFrame.tap()
+            XCTAssertTrue(amount.waitForNonExistence(timeout: 5), "Sheet schließt nach dem Kategorie-Tipp nicht")
+            stopMeasuring()
         }
-        func fmt(_ a: [TimeInterval]) -> String { a.map { String(format: "%.2f", $0) }.joined(separator: ", ") }
-        print("HB_TIMING elements: [\(fmt(element))] coordinates: [\(fmt(coord))]")
-        Thread.sleep(forTimeInterval: 4)
+        XCTAssertFalse(amount.exists, "Sheet ist noch offen")
     }
 
     // MARK: Hilfen
@@ -172,7 +169,7 @@ final class EndToEndUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         let opener = isPad ? app.buttons["toolbar.add"] : app.tabBars.buttons["Neu"]
-        guard opener.waitForExistence(timeout: 15) else { throw XCTSkip("keine gespeicherte Sitzung") }
+        try requireExistence(opener, timeout: 15, "keine gespeicherte Sitzung – vorher anmelden")
         return app
     }
 
