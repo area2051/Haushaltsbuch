@@ -1,4 +1,5 @@
 import os
+import SwiftData
 import SwiftUI
 import HaushaltsbuchCore
 import HaushaltsbuchData
@@ -111,6 +112,10 @@ struct CategoryEditView: View {
         }
         .accessibilityIdentifier("categoryEditSheet")
         .onAppear(perform: load)
+        // Kategorie inzwischen gelöscht (z. B. per Sync): Sheet schließen statt sie anzufassen.
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
+            if existing?.isGone == true { dismiss() }
+        }
     }
 
     private func load() {
@@ -120,6 +125,7 @@ struct CategoryEditView: View {
         case let .new(k):
             kind = k
         case let .edit(c):
+            guard !c.isGone else { dismiss(); return }
             name = c.name
             icon = c.icon
             color = c.color
@@ -128,6 +134,7 @@ struct CategoryEditView: View {
     }
 
     private func save() {
+        if existing?.isGone == true { dismiss(); return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try app.repository.saveCategory(CategoryDraft(id: existing?.id, name: trimmed, icon: icon,

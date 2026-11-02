@@ -1,4 +1,5 @@
 import os
+import SwiftData
 import SwiftUI
 import HaushaltsbuchCore
 import HaushaltsbuchData
@@ -27,9 +28,13 @@ struct RuleEditView: View {
         .accessibilityIdentifier("ruleEditSheet")
         .presentationDetents([.large])
         .presentationSizing(.page)
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
+            if case let .edit(r) = target, r.isGone { dismiss() }
+        }
         .task {
             guard model == nil else { return }
             let rule: RecurringRuleEntity? = if case let .edit(r) = target { r } else { nil }
+            if let rule, rule.isGone { dismiss(); return }
             model = RuleEditModel(rule: rule, repository: app.repository, currentUserId: app.currentUserId)
         }
     }
@@ -94,6 +99,7 @@ private struct RuleForm: View {
                     }
                     TextField("Notiz, z. B. Miete", text: $model.note)
                         .textFieldStyle(.roundedBorder)
+                        .limitNote($model.note)
                         .accessibilityIdentifier("rule.note")
                 }
                 .environment(\.locale, Locale(identifier: "de_DE"))

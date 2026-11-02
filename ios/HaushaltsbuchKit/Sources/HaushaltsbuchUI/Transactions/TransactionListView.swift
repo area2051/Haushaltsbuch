@@ -73,7 +73,7 @@ struct TransactionListView: View {
             Button("Verwerfen", role: .destructive) { discard(entity) }
             Button("Abbrechen", role: .cancel) {}
         } message: { entity in
-            Text(entity.rejectionReason ?? "")
+            Text(RejectionText.german(entity.rejectionReason))
         }
         .alert("Fehler", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") {}

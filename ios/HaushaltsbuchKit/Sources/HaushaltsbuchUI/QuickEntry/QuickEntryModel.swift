@@ -57,9 +57,8 @@ public final class QuickEntryModel {
     public func save(category: UUID) throws {
         if didSave { return }
         guard amount.isValid else { throw SaveError.invalidAmount }
-        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         try repository.addTransaction(amountCents: amount.cents, kind: kind, categoryId: category,
-                                      day: day, paidBy: paidBy, note: trimmed.isEmpty ? nil : trimmed)
+                                      day: day, paidBy: paidBy, note: NoteLimit.normalized(note))
         didSave = true
     }
 

@@ -122,6 +122,7 @@ private struct QuickEntryContent: View {
 
                 TextField("Notiz", text: $model.note)
                     .textFieldStyle(.roundedBorder)
+                    .limitNote($model.note)
             }
             .padding(.top, 8)
         } label: {

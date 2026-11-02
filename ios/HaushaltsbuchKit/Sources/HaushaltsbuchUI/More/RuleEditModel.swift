@@ -79,9 +79,8 @@ final class RuleEditModel {
 
     private var draft: RuleDraft? {
         guard let categoryId, let paidBy else { return nil }
-        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         return RuleDraft(id: rule?.id, amountCents: amount.cents, kind: kind, categoryId: categoryId,
-                         note: trimmed.isEmpty ? nil : trimmed, paidBy: paidBy, frequency: frequency,
+                         note: NoteLimit.normalized(note), paidBy: paidBy, frequency: frequency,
                          startDate: startDate, endDate: hasEndDate ? endDate : nil)
     }
 
@@ -94,14 +93,18 @@ final class RuleEditModel {
     var canSave: Bool { validationMessage == nil }
 
     /// Wirft `RepositoryError.invalid` mit der deutschen Meldung, wenn ungültig.
+    /// Bearbeitete Regel inzwischen gelöscht (z. B. per Sync): Sheet schließen.
+    var isGone: Bool { rule?.isGone ?? false }
+
     func save() throws {
+        if isGone { throw RepositoryError.notFound }
         if let message = validationMessage { throw RepositoryError.invalid(message) }
         guard let draft else { return }
         try repository.saveRule(draft)
     }
 
     func delete() throws {
-        guard let rule else { return }
+        guard let rule, !rule.isGone else { return }
         try repository.deleteRule(rule)
     }
 

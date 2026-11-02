@@ -161,3 +161,53 @@ private struct EditFixture {
     #expect(throws: (any Error).self) { try m.save() }
     #expect(f.entity.amountCents == 1250)
 }
+
+// MARK: Final-Review: gelöscht, während das Formular offen ist
+
+@MainActor @Test func editModelRefusesWhenTransactionWasHardDeleted() throws {
+    let f = try EditFixture()
+    let m = f.model()
+    #expect(!m.isGone)
+    // z. B. Verwerfen einer abgelehnten, nie synchronisierten Buchung oder Full-Resync.
+    f.container.mainContext.delete(f.entity)
+    try f.container.mainContext.save()
+    #expect(m.isGone)
+    #expect(throws: TransactionEditModel.SaveError.gone) { try m.save() }
+    #expect(throws: TransactionEditModel.SaveError.gone) { try m.delete() }
+}
+
+@MainActor @Test func editModelRefusesWhenTransactionWasSoftDeletedBySync() throws {
+    let f = try EditFixture()
+    let m = f.model()
+    f.entity.deleted = true
+    try f.container.mainContext.save()
+    #expect(m.isGone)
+    #expect(throws: TransactionEditModel.SaveError.gone) { try m.save() }
+}
+
+@Test func noteLimitClampsTo200Utf16Units() {
+    #expect(NoteLimit.clamp(String(repeating: "a", count: 250)).count == 200)
+    #expect(NoteLimit.clamp("kurz") == "kurz")
+    let emoji = String(repeating: "😀", count: 150)  // je 2 UTF-16-Einheiten
+    #expect(NoteLimit.clamp(emoji).utf16.count == 200)
+    #expect(NoteLimit.normalized("   ") == nil)
+    #expect(NoteLimit.normalized("  x ") == "x")
+}
+
+@MainActor @Test func editModelSaveClampsNote() throws {
+    let f = try EditFixture()
+    let m = f.model()
+    m.note = String(repeating: "b", count: 300)
+    try m.save()
+    #expect(f.entity.note?.count == 200)
+}
+
+@Test func rejectionReasonsAreGerman() {
+    #expect(RejectionText.german("category_in_use") == "Kategorie wird noch verwendet.")
+    #expect(RejectionText.german("unknown_user") == "Person existiert nicht mehr.")
+    #expect(RejectionText.german("foreign_key_violation") == "Verweis auf nicht vorhandene Daten.")
+    #expect(RejectionText.german("unique_violation") == "Eintrag existiert bereits.")
+    #expect(RejectionText.german("invalid_value") == "Ungültiger Wert.")
+    #expect(RejectionText.german("amount_cents must be > 0") == "Vom Server abgelehnt.")
+    #expect(RejectionText.german(nil) == "Vom Server abgelehnt.")
+}

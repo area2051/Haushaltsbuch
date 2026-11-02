@@ -56,7 +56,7 @@ struct RecurringRulesView: View {
             Button("Verwerfen", role: .destructive) { discard(rule) }
             Button("Abbrechen", role: .cancel) {}
         } message: { rule in
-            Text(rule.rejectionReason ?? "")
+            Text(RejectionText.german(rule.rejectionReason))
         }
         .confirmationDialog("Wiederkehrende Buchung löschen?",
                             isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
@@ -133,7 +133,8 @@ private struct RuleRow: View {
                 Text(period).font(.caption).foregroundStyle(.secondary)
                 Text(RuleFormat.nextDue(rule.nextDueDay)).font(.caption).foregroundStyle(.secondary)
                 if let reason = rule.rejectionReason {
-                    Text("Vom Server abgelehnt: \(reason)").font(.caption).foregroundStyle(.red)
+                    Text("Konnte nicht gespeichert werden: \(RejectionText.german(reason))")
+                        .font(.caption).foregroundStyle(.red)
                 }
             }
         }

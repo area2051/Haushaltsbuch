@@ -120,3 +120,12 @@ private struct QuickEntryFixture {
     m.kind = .income
     #expect(m.amount.cents == 4)
 }
+
+@MainActor @Test func quickEntryNoteIsLimitedTo200Characters() throws {
+    let f = try QuickEntryFixture()
+    let m = f.model()
+    m.amount.append(digit: 7)
+    m.note = String(repeating: "x", count: 201)
+    try m.save(category: f.food.id)
+    #expect(f.repository.activeTransactions().first?.note?.count == 200)
+}

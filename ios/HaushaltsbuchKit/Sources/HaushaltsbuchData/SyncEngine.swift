@@ -419,6 +419,7 @@ public final class SyncEngine: ObservableObject, SyncRunning {
         for (id, reason) in rejected {
             // Nur den gesendeten Stand als abgelehnt markieren; seither Geändertes wird neu gesendet.
             guard let local = byId[id], local.isDirty, sent[id] == local.dirtyGeneration else { continue }
+            logger.notice("Abgelehnt: \(E.table.rawValue, privacy: .public) \(id.uuidString, privacy: .public): \(reason, privacy: .public)")
             local.rejectionReason = reason
             local.isDirty = false
             // Abgelehntes Löschen: wieder sichtbar machen, sonst verschwindet der Datensatz lokal,

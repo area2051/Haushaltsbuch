@@ -55,7 +55,7 @@ struct BudgetsView: View {
             Button("Verwerfen", role: .destructive) { discard(categoryId: row.category.id) }
             Button("Abbrechen", role: .cancel) {}
         } message: { row in
-            Text(row.rejectionReason ?? "")
+            Text(RejectionText.german(row.rejectionReason))
         }
         .alert("Fehler", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") {}

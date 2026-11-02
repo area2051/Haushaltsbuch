@@ -3,8 +3,10 @@ import Security
 import os
 
 /// Sitzung als Generic-Password-Eintrag im Schlüsselbund, Account „session“, Daten = JSON.
-/// `AfterFirstUnlock`: auch bei gesperrtem Gerät lesbar (nach dem ersten Entsperren), damit
-/// ein Sync im Hintergrund Tokens erneuern kann.
+/// `AfterFirstUnlockThisDeviceOnly`: auch bei gesperrtem Gerät lesbar (nach dem ersten Entsperren),
+/// damit ein Sync im Hintergrund Tokens erneuern kann; nie in Backups/auf andere Geräte übertragen.
+/// Beim Aktualisieren wird die Zugriffsklasse mitgeschrieben, so dass auch Einträge älterer
+/// Versionen (`AfterFirstUnlock`) umgestellt werden.
 public struct KeychainTokenStore: TokenStore {
     public static let defaultService = "de.haushaltsbuch.app.session"
     private static let account = "session"
@@ -61,9 +63,15 @@ public struct KeychainTokenStore: TokenStore {
         }
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
         var status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            // Aktualisieren (inkl. Zugriffsklasse) nicht möglich: Eintrag neu anlegen.
+            Self.logger.notice("Keychain update failed (\(status, privacy: .public)), re-adding")
+            SecItemDelete(baseQuery as CFDictionary)
+            status = errSecItemNotFound
+        }
         if status == errSecItemNotFound {
             var add = baseQuery
             add.merge(attributes) { _, new in new }

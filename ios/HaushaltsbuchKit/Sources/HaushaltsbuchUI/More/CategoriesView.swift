@@ -78,7 +78,7 @@ struct CategoriesView: View {
             Button("Verwerfen", role: .destructive) { discard(c) }
             Button("Abbrechen", role: .cancel) {}
         } message: { c in
-            Text(c.rejectionReason ?? "")
+            Text(RejectionText.german(c.rejectionReason))
         }
         .alert("Fehler", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") {}
@@ -152,7 +152,7 @@ struct CategoryRow: View {
             if let reason = category.rejectionReason {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                    .accessibilityLabel("Vom Server abgelehnt: \(reason)")
+                    .accessibilityLabel("Konnte nicht gespeichert werden: \(RejectionText.german(reason))")
             }
         }
         .contentShape(Rectangle())

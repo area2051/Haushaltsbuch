@@ -285,7 +285,15 @@ func keychainStoreRoundTrip() throws {
         return Fixtures.tokens(access: "a-old2", refresh: "r-old2")
     }
     let pending = Task { try? await oldClient.getMe() }
-    while f.transport.requests("refresh").isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+    let deadline = ContinuousClock.now + .seconds(2)
+    while f.transport.requests("refresh").isEmpty {
+        guard ContinuousClock.now < deadline else {
+            Issue.record("Refresh wurde nicht innerhalb von 2 s angefragt")
+            pending.cancel()
+            return
+        }
+        try await Task.sleep(for: .milliseconds(5))
+    }
 
     f.transport.enqueue("login", Fixtures.loginOK(access: "a9", refresh: "r9"))
     try await f.auth.login(username: "anna", password: "geheim123")

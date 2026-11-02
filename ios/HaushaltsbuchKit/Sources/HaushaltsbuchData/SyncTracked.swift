@@ -19,3 +19,14 @@ extension SyncTracked {
         rejectionReason = nil
     }
 }
+
+import SwiftData
+
+extension SyncTracked where Self: PersistentModel {
+    /// Nicht mehr bearbeitbar: hart gelöscht (z. B. Verwerfen, Full-Resync), aus dem Kontext entfernt
+    /// oder soft-gelöscht (z. B. per Sync von einem anderen Gerät). Die Reihenfolge der Prüfungen
+    /// zählt: Felder eines hart gelöschten Objekts werden nicht mehr gelesen.
+    public var isGone: Bool {
+        isDeleted || modelContext == nil || deleted
+    }
+}

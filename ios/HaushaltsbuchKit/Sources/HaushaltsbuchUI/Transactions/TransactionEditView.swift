@@ -1,4 +1,5 @@
 import os
+import SwiftData
 import SwiftUI
 import HaushaltsbuchCore
 import HaushaltsbuchData
@@ -27,8 +28,13 @@ struct TransactionEditView: View {
         .accessibilityIdentifier("transactionEditSheet")
         .presentationDetents([.large])
         .presentationSizing(.page)
+        // Nach jedem Speichern des Kontexts (auch durch den Sync) prüfen, ob die Buchung noch existiert.
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
+            if transaction.isGone { dismiss() }
+        }
         .task {
             guard model == nil else { return }
+            guard !transaction.isGone else { dismiss(); return }
             model = TransactionEditModel(transaction: transaction, repository: app.repository,
                                          currentUserId: app.currentUserId)
         }
@@ -86,6 +92,7 @@ private struct EditContent: View {
                     }
                     TextField("Notiz", text: $model.note)
                         .textFieldStyle(.roundedBorder)
+                        .limitNote($model.note)
                         .accessibilityIdentifier("edit.note")
                 }
 

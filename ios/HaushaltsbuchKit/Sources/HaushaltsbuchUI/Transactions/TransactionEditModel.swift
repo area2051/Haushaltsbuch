@@ -8,7 +8,12 @@ import HaushaltsbuchData
 final class TransactionEditModel {
     enum SaveError: Error, Equatable {
         case invalidInput
+        /// Die Buchung wurde inzwischen gelöscht (z. B. per Sync).
+        case gone
     }
+
+    /// Gelöscht, während das Formular offen ist: Sheet schließen, nichts mehr anfassen.
+    var isGone: Bool { transaction.isGone }
 
     var amount: AmountInput
     var kind: Kind {
@@ -66,13 +71,14 @@ final class TransactionEditModel {
     }
 
     func save() throws {
+        guard !isGone else { throw SaveError.gone }
         guard canSave, let categoryId else { throw SaveError.invalidInput }
-        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         try repository.update(transaction, amountCents: amount.cents, kind: kind, categoryId: categoryId,
-                              day: day, paidBy: paidBy, note: trimmed.isEmpty ? nil : trimmed)
+                              day: day, paidBy: paidBy, note: NoteLimit.normalized(note))
     }
 
     func delete() throws {
+        guard !isGone else { throw SaveError.gone }
         try repository.delete(transaction)
     }
 
