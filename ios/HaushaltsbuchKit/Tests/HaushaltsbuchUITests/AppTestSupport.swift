@@ -193,6 +193,15 @@ final class AppFixture {
             day: CalendarDay(year: 2026, month: 11, day: 1)!, paidBy: AppFixtures.annaId, note: nil)
     }
 
+    /// Sitzung läuft ab (Access-Token abgelehnt, Refresh-Token ungültig): der `AuthService` verwirft
+    /// sie, lokale Daten bleiben, Phase `.locked`.
+    func expireSession() async {
+        transport.enqueue("listUsers", AppFixtures.error(401, code: "unauthorized"))
+        transport.enqueue("refresh", AppFixtures.error(401, code: "invalid_refresh_token"))
+        _ = try? await auth.client?.listUsers()
+        await waitUntil { self.model.phase == .locked }
+    }
+
     func count<T: PersistentModel>(_ type: T.Type) throws -> Int {
         try container.mainContext.fetchCount(FetchDescriptor<T>())
     }

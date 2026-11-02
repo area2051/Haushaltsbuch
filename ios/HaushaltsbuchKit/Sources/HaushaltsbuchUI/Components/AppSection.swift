@@ -25,40 +25,16 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// Inhalt eines Bereichs .
+/// Inhalt eines Bereichs.
 struct SectionScreen: View {
     let section: AppSection
 
     var body: some View {
         switch section {
-        case .more: MorePlaceholder()
+        case .more: MoreView()
         case .transactions: TransactionListView()
         case .overview: OverviewView()
         case .budgets: BudgetsView()
         }
-    }
-}
-
-/// „Mehr“ bis Task 13: nur Abmelden.
-struct MorePlaceholder: View {
-    @Environment(AppModel.self) private var model
-    @State private var loggingOut = false
-
-    var body: some View {
-        List {
-            Section {
-                Button("Abmelden", role: .destructive) {
-                    loggingOut = true
-                    Task {
-                        await model.logout()
-                        loggingOut = false
-                    }
-                }
-                .disabled(loggingOut)
-            } footer: {
-                Text("Weitere Einstellungen folgen.")
-            }
-        }
-        .navigationTitle("Mehr")
     }
 }

@@ -109,10 +109,8 @@ import HaushaltsbuchData
     try f.addPendingTransaction()
     f.cursor(AppFixtures.serverURL, AppFixtures.bertId).lastVersion = 42
 
-    // Abmelden versucht vorher zu synchronisieren (hier offline → Änderungen bleiben).
-    f.transport.enqueue("logout", .empty(204))
-    await f.model.logout()
-    #expect(f.syncTransport.requests == 1)
+    // Sitzung abgelaufen (Refresh-Token ungültig) → Daten bleiben, Anmeldung gesperrt.
+    await f.expireSession()
     #expect(f.model.phase == .locked)
     #expect(f.schedulers.only?.stops == 1)
 
@@ -139,8 +137,7 @@ import HaushaltsbuchData
     ctx.insert(MemberEntity(id: AppFixtures.annaId, username: "anna", displayName: "Anna", isAdmin: true, version: 1))
     try ctx.save()
 
-    f.transport.enqueue("logout", .empty(204))
-    await f.model.logout()
+    await f.expireSession()
     f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.bertId, username: "bert"))
     let outcome = try await f.model.login(username: "bert", password: "geheim123")
 
@@ -151,8 +148,7 @@ import HaushaltsbuchData
 @MainActor @Test func failedSwitchLoginKeepsLocalData() async throws {
     let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna")
     try f.addPendingTransaction()
-    f.transport.enqueue("logout", .empty(204))
-    await f.model.logout()
+    await f.expireSession()
 
     f.transport.enqueue("login", AppFixtures.error(401, code: "invalid_credentials"))
     await #expect(throws: APIError.self) {
@@ -160,6 +156,64 @@ import HaushaltsbuchData
     }
     #expect(try f.count(TransactionEntity.self) == 1)
     #expect(f.model.phase == .locked)
+}
+
+// MARK: Abmelden (Task 13): Rückfrage bei ungesendeten Änderungen, dann Store leeren
+
+@MainActor @Test func logoutWithPendingChangesAsksForConfirmation() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna")
+    try f.addPendingTransaction()
+    f.cursor(AppFixtures.serverURL, AppFixtures.annaId).lastVersion = 42
+
+    // Offline: Sync scheitert, Änderungen bleiben → Rückfrage, noch nichts passiert.
+    let first = await f.model.logout()
+    #expect(first == .needsDiscardConfirmation(pending: 2))
+    #expect(f.syncTransport.requests == 1)
+    #expect(f.model.phase == .ready)
+    #expect(f.model.engine != nil)
+    #expect(f.store.load() != nil)
+    #expect(f.transport.calls("logout") == 0)
+    #expect(try f.count(TransactionEntity.self) == 1)
+
+    f.transport.enqueue("logout", .empty(204))
+    let second = await f.model.logout(discardPending: true)
+    #expect(second == .loggedOut)
+    #expect(f.model.phase == .locked)
+    #expect(f.model.engine == nil)
+    #expect(f.store.load() == nil)
+    #expect(f.transport.calls("logout") == 1)
+    #expect(try f.count(TransactionEntity.self) == 0)
+    #expect(try f.count(CategoryEntity.self) == 0)
+    #expect(f.cursor(AppFixtures.serverURL, AppFixtures.annaId).lastVersion == 0)
+}
+
+@MainActor @Test func logoutWithoutPendingChangesWipesAndAllowsOtherUser() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna")
+    f.syncTransport.isOnline = true
+    let ctx = f.container.mainContext
+    ctx.insert(MemberEntity(id: AppFixtures.annaId, username: "anna", displayName: "Anna", isAdmin: true, version: 1))
+    try ctx.save()
+    f.cursor(AppFixtures.serverURL, AppFixtures.annaId).lastVersion = 42
+
+    f.transport.enqueue("logout", .empty(204))
+    #expect(await f.model.logout() == .loggedOut)
+    #expect(f.model.phase == .locked)
+    #expect(try f.count(MemberEntity.self) == 0)
+    #expect(f.cursor(AppFixtures.serverURL, AppFixtures.annaId).lastVersion == 0)
+
+    // Store ist leer: ein anderer Benutzer braucht keine Rückfrage.
+    f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.bertId, username: "bert"))
+    #expect(try await f.model.login(username: "bert", password: "geheim123") == .loggedIn)
+    #expect(f.model.phase == .ready)
+}
+
+@MainActor @Test func logoutKeepsAppLockSetting() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna")
+    f.syncTransport.isOnline = true
+    f.defaults.set(true, forKey: AppLock.enabledKey)
+    f.transport.enqueue("logout", .empty(204))
+    #expect(await f.model.logout() == .loggedOut)
+    #expect(f.defaults.bool(forKey: AppLock.enabledKey))
 }
 
 // MARK: Fix-Runde 1: sicherer Wechsel, begrenztes Abmelden
@@ -175,8 +229,7 @@ struct WipeFailure: Error {}
         try AppModel.deleteAllRecords(in: context)
     })
     try f.addPendingTransaction()
-    f.transport.enqueue("logout", .empty(204))
-    await f.model.logout()
+    await f.expireSession()
 
     f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.bertId, username: "bert"))
     let outcome = try await f.model.login(username: "bert", password: "geheim123", discardPending: true)
@@ -192,8 +245,7 @@ struct WipeFailure: Error {}
     let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna",
                            wipe: { _, _ in throw WipeFailure() })
     try f.addPendingTransaction()
-    f.transport.enqueue("logout", .empty(204))
-    await f.model.logout()
+    await f.expireSession()
     let schedulersBefore = f.schedulers.count
 
     f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.bertId, username: "bert"))
@@ -205,7 +257,7 @@ struct WipeFailure: Error {}
     #expect(AppModel.SwitchError.localDataNotCleared.germanMessage
             == "Lokale Daten konnten nicht gelöscht werden. Bitte erneut versuchen.")
     #expect(f.store.load() == nil)                       // neue Sitzung verworfen
-    #expect(f.transport.calls("logout") == 2)            // Bert-Refresh-Token widerrufen
+    #expect(f.transport.calls("logout") == 1)            // Bert-Refresh-Token widerrufen
     #expect(f.model.phase == .locked)
     #expect(f.model.engine == nil)
     #expect(f.schedulers.count == schedulersBefore)      // kein Sync auf Annas Daten
@@ -220,7 +272,7 @@ struct WipeFailure: Error {}
                            hangingSync: true, logoutSyncTimeout: 0.05)
     f.transport.enqueue("logout", .empty(204))
     let start = ContinuousClock.now
-    await f.model.logout()
+    #expect(await f.model.logout() == .loggedOut)
     #expect(ContinuousClock.now - start < .seconds(2))
     #expect(f.model.phase == .locked)
     #expect(f.store.load() == nil)

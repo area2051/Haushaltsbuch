@@ -39,6 +39,12 @@ public final class AppModel {
         case ready
     }
 
+    public enum LogoutOutcome: Equatable, Sendable {
+        case loggedOut
+        /// Nach dem Sync-Versuch noch ungesendete Änderungen: erst nach Bestätigung verwerfen.
+        case needsDiscardConfirmation(pending: Int)
+    }
+
     public enum AuthOutcome: Equatable, Sendable {
         case loggedIn
         /// Anderer Benutzer/Server, aber ungesendete Änderungen: erst nach Bestätigung verwerfen.
@@ -108,6 +114,8 @@ public final class AppModel {
     @ObservationIgnored public private(set) var repository: Repository!
     public let auth: AuthService
     public private(set) var engine: SyncEngine?
+    /// Face-ID-Sperre (Geräteeinstellung, unabhängig von der Sitzung).
+    @ObservationIgnored public let appLock: AppLock
 
     @ObservationIgnored private var scheduler: (any SyncScheduling)?
     @ObservationIgnored private var activeSession: SessionKey?
@@ -125,10 +133,11 @@ public final class AppModel {
     }
 
     public init(container: ModelContainer, auth: AuthService, defaults: UserDefaults = .standard,
-                dependencies: Dependencies? = nil) {
+                dependencies: Dependencies? = nil, appLock: AppLock? = nil) {
         self.container = container
         self.auth = auth
         self.defaults = defaults
+        self.appLock = appLock ?? AppLock(defaults: defaults)
         self.dependencies = dependencies ?? .live(defaults: defaults)
         repository = Repository(context: container.mainContext) { [weak self] in
             self?.scheduler?.localChange()
@@ -142,6 +151,11 @@ public final class AppModel {
     /// Anmeldezustand, den die Oberfläche zeigt (während eines Benutzerwechsels der vorherige).
     public var visibleAuthState: AuthState {
         frozenAuthState ?? auth.state
+    }
+
+    /// Angemeldete Sitzung (Server & Sync, Admin-Rechte).
+    public var session: StoredSession? {
+        if case .loggedIn(let session) = auth.state { session } else { nil }
     }
 
     /// Eingeloggter Benutzer (für „Bezahlt von“ und Vorbelegungen).
@@ -192,19 +206,43 @@ public final class AppModel {
         auth.forgetServer()
     }
 
-    /// Abmelden: vorher noch einmal synchronisieren (best effort), dann Sitzung verwerfen.
-    /// Nicht gesendete Änderungen bleiben lokal erhalten.
-    public func logout() async {
+    /// Abmelden (Spec §7 „Mehr“): vorher noch einmal synchronisieren (höchstens
+    /// `logoutSyncTimeout`). Bleiben ungesendete Änderungen, passiert nichts und die Oberfläche
+    /// fragt nach (`needsDiscardConfirmation`); mit `discardPending` werden sie verworfen.
+    /// Danach: Sitzung beim Server beenden, lokalen Store leeren, Sync-Cursor zurücksetzen.
+    ///
+    /// Läuft dagegen nur die Sitzung ab (Refresh-Token ungültig), bleiben die Daten erhalten (§8).
+    public func logout(discardPending: Bool = false) async -> LogoutOutcome {
         if let engine {
             await Self.runBounded(seconds: dependencies.logoutSyncTimeout) {
                 await engine.syncNow()
             }
         }
+        let pending = repository.pendingChangesCount
+        if pending > 0 && !discardPending {
+            return .needsDiscardConfirmation(pending: pending)
+        }
+        let session = self.session
         deactivate()
         await auth.logout()
+        do {
+            try dependencies.wipeStore(container.mainContext)
+            defaults.removeObject(forKey: Self.dataUsernameKey)
+            defaults.removeObject(forKey: Self.dataServerKey)
+        } catch {
+            // Daten bleiben samt Besitzer-Schlüsseln: ein anderer Benutzer löst den Wechsel-Ablauf aus.
+            logger.error("Lokaler Store beim Abmelden nicht geleert: \(String(describing: error), privacy: .public)")
+            container.mainContext.rollback()
+        }
+        if let session {
+            var cursor = dependencies.makeCursor(session.serverURL, session.userId)
+            cursor.lastVersion = 0
+        }
+        return .loggedOut
     }
 
     public func scenePhaseChanged(_ phase: ScenePhase) {
+        appLock.scenePhaseChanged(phase)
         if phase == .active { scheduler?.appDidBecomeActive() }
     }
 

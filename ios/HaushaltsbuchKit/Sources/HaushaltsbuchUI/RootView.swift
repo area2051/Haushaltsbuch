@@ -17,8 +17,13 @@ public struct RootView: View {
         content
             .environment(model)
             .modelContainer(model.container)
+            .appLockWindow(model.appLock)
             .onChange(of: scenePhase) { _, phase in
                 model.scenePhaseChanged(phase)
+            }
+            .task {
+                // Kaltstart mit Sperre: einmal automatisch fragen (danach über `scenePhaseChanged`).
+                if scenePhase == .active { await model.appLock.autoPromptIfNeeded() }
             }
     }
 
