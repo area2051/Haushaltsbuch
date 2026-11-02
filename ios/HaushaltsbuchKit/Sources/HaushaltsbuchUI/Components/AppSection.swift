@@ -1,16 +1,5 @@
 import SwiftUI
 
-/// Platzhalter für Bildschirme, die in späteren Tasks entstehen (Übersicht, Buchungen, Budgets, Mehr, Erfassung).
-struct PlaceholderScreen: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        ContentUnavailableView(title, systemImage: systemImage, description: Text("Folgt in Kürze."))
-            .navigationTitle(title)
-    }
-}
-
 /// Die Bereiche der Hauptnavigation.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
     case overview, transactions, budgets, more
@@ -36,7 +25,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// Inhalt eines Bereichs (bis Tasks 10–13 Platzhalter).
+/// Inhalt eines Bereichs .
 struct SectionScreen: View {
     let section: AppSection
 
@@ -44,7 +33,8 @@ struct SectionScreen: View {
         switch section {
         case .more: MorePlaceholder()
         case .transactions: TransactionListView()
-        default: PlaceholderScreen(title: section.title, systemImage: section.systemImage)
+        case .overview: OverviewView()
+        case .budgets: BudgetsView()
         }
     }
 }
