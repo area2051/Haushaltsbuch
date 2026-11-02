@@ -23,7 +23,7 @@ struct MainSplitView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $showEntry) {
-            QuickEntryPlaceholder()
+            QuickEntryView()
         }
     }
 

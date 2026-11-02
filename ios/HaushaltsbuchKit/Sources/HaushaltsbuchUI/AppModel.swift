@@ -144,6 +144,11 @@ public final class AppModel {
         frozenAuthState ?? auth.state
     }
 
+    /// Eingeloggter Benutzer (für „Bezahlt von“ und Vorbelegungen).
+    public var currentUserId: UUID? {
+        if case .loggedIn(let session) = auth.state { session.userId } else { nil }
+    }
+
     public var phase: Phase {
         switch visibleAuthState {
         case .loggedIn:

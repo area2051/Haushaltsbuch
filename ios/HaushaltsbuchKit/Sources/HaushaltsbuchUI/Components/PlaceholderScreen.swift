@@ -71,20 +71,3 @@ struct MorePlaceholder: View {
         .navigationTitle("Mehr")
     }
 }
-
-/// Erfassungs-Sheet bis Task 10.
-struct QuickEntryPlaceholder: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            PlaceholderScreen(title: "Neue Buchung", systemImage: "plus.circle")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Abbrechen") { dismiss() }
-                    }
-                }
-        }
-        .accessibilityIdentifier("quickEntrySheet")
-    }
-}

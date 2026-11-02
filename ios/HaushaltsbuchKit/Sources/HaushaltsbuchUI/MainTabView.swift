@@ -23,7 +23,7 @@ struct MainTabView: View {
             tab(.more)
         }
         .sheet(isPresented: $showEntry) {
-            QuickEntryPlaceholder()
+            QuickEntryView()
         }
     }
 
