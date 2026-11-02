@@ -314,6 +314,25 @@ struct WipeFailure: Error {}
     #expect(ContinuousClock.now - start < .seconds(2))
 }
 
+// MARK: Final-Review: Verwerfen abgelehnter synchronisierter Änderungen
+
+@MainActor @Test func discardingRejectedSyncedChangeResetsCursorAndSyncs() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna")
+    let scheduler = try #require(f.schedulers.only)
+    let cursor = f.cursor(AppFixtures.serverURL, AppFixtures.annaId)
+    let tx = try f.addPendingTransaction()
+    tx.version = 5
+    tx.isDirty = false
+    tx.rejectionReason = "unknown_user"
+    cursor.lastVersion = 42
+
+    try f.model.repository.discardRejected(tx)
+
+    #expect(cursor.lastVersion == 0)
+    #expect(scheduler.syncRequests == 1)
+    #expect(tx.rejectionReason == nil)
+}
+
 // MARK: Hilfsfunktionen
 
 @Test func normalizesServerInput() {

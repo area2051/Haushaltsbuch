@@ -15,6 +15,8 @@ struct CategoriesView: View {
     @State private var kind: Kind = .expense
     @State private var editing: CategorySheet?
     @State private var message: String?
+    @State private var rejected: CategoryEntity?
+    @State private var errorMessage: String?
 
     private var ofKind: [CategoryEntity] {
         all.filter { !$0.deleted && $0.kindValue == kind }
@@ -35,7 +37,7 @@ struct CategoriesView: View {
             }
             Section {
                 ForEach(active) { c in
-                    Button { editing = .edit(c) } label: { CategoryRow(category: c) }
+                    Button { open(c) } label: { CategoryRow(category: c) }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("categories.row")
                         .swipeActions {
@@ -48,7 +50,14 @@ struct CategoriesView: View {
             }
             if !archived.isEmpty {
                 Section("Archiviert") {
-                    ForEach(archived) { CategoryRow(category: $0).foregroundStyle(.secondary) }
+                    ForEach(archived) { c in
+                        if c.rejectionReason != nil {
+                            Button { rejected = c } label: { CategoryRow(category: c).foregroundStyle(.secondary) }
+                                .buttonStyle(.plain)
+                        } else {
+                            CategoryRow(category: c).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }
@@ -62,10 +71,35 @@ struct CategoriesView: View {
             }
         }
         .sheet(item: $editing) { CategoryEditView(target: $0) }
+        .confirmationDialog("Konnte nicht gespeichert werden",
+                            isPresented: Binding(get: { rejected != nil }, set: { if !$0 { rejected = nil } }),
+                            titleVisibility: .visible, presenting: rejected) { c in
+            Button("Bearbeiten") { editing = .edit(c) }
+            Button("Verwerfen", role: .destructive) { discard(c) }
+            Button("Abbrechen", role: .cancel) {}
+        } message: { c in
+            Text(c.rejectionReason ?? "")
+        }
+        .alert("Fehler", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .alert("Kategorie entfernt", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK") {}
         } message: {
             Text(message ?? "")
+        }
+    }
+
+    private func open(_ c: CategoryEntity) {
+        if c.rejectionReason != nil { rejected = c } else { editing = .edit(c) }
+    }
+
+    private func discard(_ c: CategoryEntity) {
+        do { try app.repository.discardRejected(c) } catch {
+            logger.error("Verwerfen fehlgeschlagen: \(String(describing: error), privacy: .public)")
+            errorMessage = "Die Änderung konnte nicht verworfen werden."
         }
     }
 

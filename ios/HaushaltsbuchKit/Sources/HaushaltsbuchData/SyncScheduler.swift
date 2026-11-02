@@ -132,6 +132,11 @@ public final class SyncScheduler {
         await runSync()
     }
 
+    /// Sofort synchronisieren, ohne darauf zu warten (z. B. Neuabruf nach dem Verwerfen).
+    public func requestSync() {
+        trigger()
+    }
+
     // MARK: Intern
 
     private func trigger() {

@@ -129,10 +129,18 @@ public enum SyncStatus: Equatable, Sendable {
 /// 3. Antwort anwenden: lokal dirty und seit dem Snapshot erneut geändert (oder nicht gesendet) → nicht
 ///    überschreiben; sonst Server-Stand übernehmen und `isDirty = false`. Unbekannte anlegen,
 ///    `users` → `MemberEntity`.
-/// 4. `rejected` → `rejectionReason`, `isDirty = false` (lokaler Inhalt bleibt zum Bearbeiten).
+/// 4. `rejected` → `rejectionReason`, `isDirty = false` (lokaler Inhalt bleibt zum Bearbeiten);
+///    ein abgelehntes Löschen wird wieder sichtbar (`deleted = false`). Abgelehnte Datensätze
+///    überschreibt kein Pull, bis sie bearbeitet oder verworfen sind.
 /// 5. `fullResync` → nicht dirty, nicht abgelehnte und nicht in der Antwort enthaltene Datensätze
 ///    hart löschen.
-/// 6. Speichern, dann `lastVersion = currentVersion`. War das Paket voll, folgt das nächste.
+/// 6. Speichern, dann `lastVersion = currentVersion` – außer es wurde ein schon synchronisierter
+///    Datensatz abgelehnt oder `requestRefetch()` gerufen: dann `lastVersion = 0`, der nächste
+///    Durchlauf holt alles neu und stellt so den Server-Stand verworfener Änderungen wieder her
+///    (der Server liefert nur Zeilen mit `version > lastVersion`). War das Paket voll, folgt das nächste.
+///
+/// `invalidate()` (Abmelden/Sitzungswechsel) beendet die Engine endgültig: laufende Antworten werden
+/// nicht mehr angewendet, neue Durchläufe nicht gestartet.
 @MainActor
 public final class SyncEngine: ObservableObject, SyncRunning {
     public static let defaultBatchSize = 500
@@ -148,6 +156,10 @@ public final class SyncEngine: ObservableObject, SyncRunning {
     private let now: @MainActor () -> Date
 
     private var isRunning = false
+    /// Nach `invalidate()`: nichts mehr senden oder anwenden.
+    public private(set) var isInvalidated = false
+    /// Zählt `requestRefetch()`-Aufrufe; ändert er sich während eines Requests, bleibt der Cursor 0.
+    private var refetchEpoch = 0
     private var rerunRequested = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
@@ -176,6 +188,7 @@ public final class SyncEngine: ObservableObject, SyncRunning {
     /// Synchronisiert jetzt. Läuft bereits ein Sync, wird kein zweiter gestartet: der Aufruf merkt
     /// einen Nachlauf vor und kehrt zurück, wenn der laufende Sync (inkl. Nachlauf) fertig ist.
     public func syncNow() async {
+        guard !isInvalidated else { return }
         if isRunning {
             rerunRequested = true
             await withCheckedContinuation { waiters.append($0) }
@@ -185,11 +198,25 @@ public final class SyncEngine: ObservableObject, SyncRunning {
         repeat {
             rerunRequested = false
             await runOnce()
-        } while rerunRequested && !Task.isCancelled
+        } while rerunRequested && !Task.isCancelled && !isInvalidated
         isRunning = false
         let done = waiters
         waiters = []
         done.forEach { $0.resume() }
+    }
+
+    /// Endgültig beenden (Abmelden/Sitzungswechsel): eine noch ausstehende Server-Antwort wird
+    /// verworfen, statt in den (evtl. schon geleerten) Store geschrieben zu werden.
+    public func invalidate() {
+        isInvalidated = true
+    }
+
+    /// Der nächste Durchlauf holt alles ab Version 0 neu (z. B. nach dem Verwerfen einer abgelehnten
+    /// Änderung an einem schon synchronisierten Datensatz: der Server-Stand hat sich nicht geändert
+    /// und käme sonst nie wieder).
+    public func requestRefetch() {
+        refetchEpoch += 1
+        cursor.lastVersion = 0
     }
 
     // MARK: Ablauf
@@ -208,7 +235,7 @@ public final class SyncEngine: ObservableObject, SyncRunning {
             return .succeeded
         } catch {
             let apiError = APIError(error)
-            if apiError == .cancelled || Task.isCancelled {
+            if apiError == .cancelled || Task.isCancelled || isInvalidated {
                 // Abbruch ist kein Fehler: still aufhören.
                 status = previous
                 return .cancelled
@@ -242,10 +269,17 @@ public final class SyncEngine: ObservableObject, SyncRunning {
                 sent[table, default: [:]].merge(generations) { $1 }
             }
 
+            let epoch = refetchEpoch
             let request = Components.Schemas.SyncRequest(changes: batch.changes, lastVersion: cursor.lastVersion)
             let response = try await transport.sync(request)
-            try apply(response, sent: batch.generations)
-            cursor.lastVersion = response.currentVersion
+            // Abgemeldet oder abgebrochen, während der Request lief: Antwort nicht mehr anwenden.
+            try Task.checkCancellation()
+            if isInvalidated { throw CancellationError() }
+            let rejectedSynced = try apply(response, sent: batch.generations)
+            if rejectedSynced {
+                logger.notice("Abgelehnte Änderung an synchronisiertem Datensatz: nächster Sync holt alles neu")
+            }
+            cursor.lastVersion = (rejectedSynced || refetchEpoch != epoch) ? 0 : response.currentVersion
 
             // Nicht volles Paket: alles gesendet. Während des Requests Geändertes überträgt der
             // nächste Sync (Repository → Scheduler.localChange).
@@ -316,7 +350,8 @@ public final class SyncEngine: ObservableObject, SyncRunning {
 
     // MARK: Antwort anwenden
 
-    private func apply(_ response: Components.Schemas.SyncResponse, sent: [SyncTable: [UUID: Int]]) throws {
+    /// - Returns: `true`, wenn ein schon synchronisierter Datensatz (`version != nil`) abgelehnt wurde.
+    private func apply(_ response: Components.Schemas.SyncResponse, sent: [SyncTable: [UUID: Int]]) throws -> Bool {
         var rejected: [SyncTable: [UUID: String]] = [:]
         for r in response.rejected {
             // Passt nicht zu einem lokalen Datensatz (unbekannte Tabelle, fehlende/kaputte ID) → ignorieren.
@@ -329,12 +364,14 @@ public final class SyncEngine: ObservableObject, SyncRunning {
         let full = response.fullResync
         let changes = response.changes
         do {
-            try applyRecords(changes.categories, of: CategoryEntity.self, rejected: rejected, sent: sent, fullResync: full)
-            try applyRecords(changes.recurringRules, of: RecurringRuleEntity.self, rejected: rejected, sent: sent, fullResync: full)
-            try applyRecords(changes.transactions, of: TransactionEntity.self, rejected: rejected, sent: sent, fullResync: full)
-            try applyRecords(changes.budgets, of: BudgetEntity.self, rejected: rejected, sent: sent, fullResync: full)
+            var rejectedSynced = false
+            rejectedSynced = try applyRecords(changes.categories, of: CategoryEntity.self, rejected: rejected, sent: sent, fullResync: full) || rejectedSynced
+            rejectedSynced = try applyRecords(changes.recurringRules, of: RecurringRuleEntity.self, rejected: rejected, sent: sent, fullResync: full) || rejectedSynced
+            rejectedSynced = try applyRecords(changes.transactions, of: TransactionEntity.self, rejected: rejected, sent: sent, fullResync: full) || rejectedSynced
+            rejectedSynced = try applyRecords(changes.budgets, of: BudgetEntity.self, rejected: rejected, sent: sent, fullResync: full) || rejectedSynced
             try applyMembers(changes.users, fullResync: full)
             try context.save()
+            return rejectedSynced
         } catch {
             // Nichts halb Angewendetes stehen lassen; der Cursor bleibt, der nächste Sync holt alles erneut.
             context.rollback()
@@ -344,7 +381,7 @@ public final class SyncEngine: ObservableObject, SyncRunning {
 
     private func applyRecords<E: SyncEntity>(_ records: [E.RecordOut], of type: E.Type,
                                              rejected allRejected: [SyncTable: [UUID: String]],
-                                             sent allSent: [SyncTable: [UUID: Int]], fullResync: Bool) throws {
+                                             sent allSent: [SyncTable: [UUID: Int]], fullResync: Bool) throws -> Bool {
         let rejected = allRejected[E.table] ?? [:]
         let sent = allSent[E.table] ?? [:]
         var byId: [UUID: E] = [:]
@@ -362,6 +399,9 @@ public final class SyncEngine: ObservableObject, SyncRunning {
                 // Lokale Änderung, die der Server noch nicht (in diesem Stand) hat, nicht überschreiben;
                 // abgelehnte behalten ihren lokalen Inhalt.
                 if local.isDirty && (sent[id] != local.dirtyGeneration || rejected[id] != nil) { continue }
+                // Früher abgelehnt und noch nicht aufgelöst: Inhalt und Grund bleiben sichtbar, bis der
+                // Nutzer bearbeitet (→ dirty) oder verwirft (→ Neuabruf ab Version 0).
+                if !local.isDirty && local.rejectionReason != nil { continue }
                 if !local.apply(record) {
                     logger.error("Ungültiger Datensatz in \(E.table.rawValue, privacy: .public): \(raw, privacy: .public)")
                 }
@@ -375,11 +415,16 @@ public final class SyncEngine: ObservableObject, SyncRunning {
             }
         }
 
+        var rejectedSynced = false
         for (id, reason) in rejected {
             // Nur den gesendeten Stand als abgelehnt markieren; seither Geändertes wird neu gesendet.
             guard let local = byId[id], local.isDirty, sent[id] == local.dirtyGeneration else { continue }
             local.rejectionReason = reason
             local.isDirty = false
+            // Abgelehntes Löschen: wieder sichtbar machen, sonst verschwindet der Datensatz lokal,
+            // obwohl er auf dem Server aktiv ist, und der Nutzer kann die Ablehnung nicht auflösen.
+            if local.deleted { local.deleted = false }
+            if local.version != nil { rejectedSynced = true }
         }
 
         if fullResync {
@@ -387,6 +432,7 @@ public final class SyncEngine: ObservableObject, SyncRunning {
                 context.delete(local)
             }
         }
+        return rejectedSynced
     }
 
     private func applyMembers(_ users: [Components.Schemas.UserRecord], fullResync: Bool) throws {

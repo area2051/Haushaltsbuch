@@ -101,6 +101,8 @@ final class FakeScheduler: SyncScheduling {
     func appDidBecomeActive() { activations += 1 }
     func localChange() { localChanges += 1 }
     func pullToRefresh() async { refreshes += 1 }
+    var syncRequests = 0
+    func requestSync() { syncRequests += 1 }
 }
 
 enum AppFixtures {

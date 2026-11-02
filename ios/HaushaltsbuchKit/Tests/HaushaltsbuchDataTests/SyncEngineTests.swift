@@ -502,3 +502,107 @@ import HaushaltsbuchCore
     store.lastVersion = 17
     #expect(UserDefaultsCursorStore(key: store.key, defaults: defaults).lastVersion == 17)
 }
+
+// MARK: Abgelehnte Änderungen an synchronisierten Datensätzen (Final-Review Finding 1)
+
+private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
+
+@MainActor @Test func rejectedEditOfSyncedRecordConvergesAfterDiscard() async throws {
+    let f = try SyncFixture()
+    let cat = try f.makeCategory()
+    let tx = try f.addTx(category: cat.id, amount: 1250)
+    await f.engine.syncNow()
+    let serverVersion = try #require(tx.version)
+    let serverRow = Components.Schemas.TransactionRecordOut(
+        amountCents: 1250, categoryId: lower(cat.id), date: "2026-11-01", deleted: false, id: lower(tx.id),
+        kind: .expense, note: "Brot", paidBy: lower(f.user), recurringRuleId: nil, version: serverVersion)
+
+    // Bearbeitung wird abgelehnt: lokaler Inhalt bleibt mit Grund, Cursor fällt auf 0.
+    try f.repo.update(tx, amountCents: 999, kind: .expense, categoryId: cat.id, day: f.day, paidBy: f.user, note: "X")
+    f.server.rejected = [.init(id: lower(tx.id), reason: "unknown_user", table: "transactions")]
+    await f.engine.syncNow()
+    #expect(tx.rejectionReason == "unknown_user")
+    #expect(tx.amountCents == 999)
+    #expect(!tx.isDirty)
+    #expect(f.cursor.lastVersion == 0)
+
+    // Neuabruf ab 0 bringt die (unveränderte) Server-Zeile – sie überschreibt die Ablehnung nicht.
+    f.server.rejected = []
+    f.server.extra.transactions = [serverRow]
+    await f.engine.syncNow()
+    #expect(f.transport.requests.last?.lastVersion == 0)
+    #expect(tx.rejectionReason == "unknown_user")
+    #expect(tx.amountCents == 999)
+    #expect(f.cursor.lastVersion > 0)
+
+    // Verwerfen: Neuabruf angefordert, nächster Sync stellt den Server-Stand her.
+    try f.repo.discardRejected(tx)
+    #expect(f.refetchRequests == 1)
+    #expect(f.cursor.lastVersion == 0)
+    await f.engine.syncNow()
+    #expect(f.transport.requests.last?.lastVersion == 0)
+    #expect(tx.amountCents == 1250)
+    #expect(tx.note == "Brot")
+    #expect(tx.rejectionReason == nil)
+    #expect(!tx.isDirty)
+    #expect(tx.version == serverVersion)
+}
+
+@MainActor @Test func rejectedDeleteBecomesVisibleAndDiscardRestoresServerState() async throws {
+    let f = try SyncFixture()
+    let cat = try f.makeCategory("Essen")
+    await f.engine.syncNow()
+    let version = try #require(cat.version)
+
+    // Löschen wird abgelehnt (auf dem Server noch benutzt).
+    try f.repo.removeCategory(cat)
+    #expect(cat.deleted)
+    f.server.rejected = [.init(id: lower(cat.id), reason: "category_in_use", table: "categories")]
+    await f.engine.syncNow()
+    #expect(!cat.deleted)
+    #expect(cat.rejectionReason == "category_in_use")
+    #expect(f.repo.activeCategories().map(\.id) == [cat.id])
+    #expect(f.cursor.lastVersion == 0)
+
+    // Verwerfen: Server-Stand (inzwischen umbenannt) kommt per Neuabruf zurück.
+    f.server.rejected = []
+    f.server.extra.categories = [.init(archived: false, color: "#112233", deleted: false, icon: "cart",
+                                       id: lower(cat.id), kind: .expense, name: "Lebensmittel",
+                                       sortOrder: 0, version: version + 3)]
+    try f.repo.discardRejected(cat)
+    await f.engine.syncNow()
+    #expect(f.transport.requests.last?.lastVersion == 0)
+    #expect(cat.name == "Lebensmittel")
+    #expect(!cat.deleted)
+    #expect(cat.rejectionReason == nil)
+    #expect(cat.version == version + 3)
+}
+
+@MainActor @Test func refetchRequestedDuringRequestKeepsCursorAtZero() async throws {
+    let f = try SyncFixture(lastVersion: 10)
+    let engine = f.engine, server = f.server
+    f.server.currentVersion = 20
+    f.transport.handle { req in
+        engine.requestRefetch()  // z. B. Verwerfen, während der Request unterwegs ist
+        return server.handle(req)
+    }
+    await f.engine.syncNow()
+    #expect(f.cursor.lastVersion == 0)
+
+    f.transport.handle { req in server.handle(req) }
+    await f.engine.syncNow()
+    #expect(f.transport.requests.last?.lastVersion == 0)
+    #expect(f.cursor.lastVersion == 20)
+}
+
+@MainActor @Test func discardOfNeverSyncedRecordDoesNotRequestRefetch() async throws {
+    let f = try SyncFixture(lastVersion: 7)
+    let cat = try f.makeCategory()
+    let tx = try f.addTx(category: cat.id)
+    tx.rejectionReason = "unknown_user"
+    tx.isDirty = false
+    try f.repo.discardRejected(tx)
+    #expect(f.refetchRequests == 0)
+    #expect(f.cursor.lastVersion == 7)
+    #expect(try f.all(TransactionEntity.self).isEmpty)
+}

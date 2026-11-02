@@ -12,10 +12,16 @@ public enum RepositoryError: Error, Equatable {
 public final class Repository {
     private let context: ModelContext
     private let onChange: @MainActor () -> Void
+    private let onRefetchNeeded: @MainActor () -> Void
 
-    public init(context: ModelContext, onChange: @escaping @MainActor () -> Void = {}) {
+    /// - Parameter onRefetchNeeded: nach dem Verwerfen einer abgelehnten Änderung an einem schon
+    ///   synchronisierten Datensatz – der Sync muss alles ab Version 0 neu holen (Cursor auf 0, Sync
+    ///   anstoßen), sonst käme der unveränderte Server-Stand nie zurück.
+    public init(context: ModelContext, onChange: @escaping @MainActor () -> Void = {},
+                onRefetchNeeded: @escaping @MainActor () -> Void = {}) {
         self.context = context
         self.onChange = onChange
+        self.onRefetchNeeded = onRefetchNeeded
     }
 
     // MARK: Lesen (aktive = nicht gelöscht)
@@ -211,15 +217,20 @@ public final class Repository {
 
     // MARK: Abgelehnte Änderungen
 
-    /// Nie synchronisiert → hart löschen; sonst Änderung verwerfen (nächster Pull bringt den Server-Stand).
+    /// Nie synchronisiert → hart löschen. Sonst Ablehnung und Dirty-Markierung entfernen und einen
+    /// Neuabruf ab Version 0 anfordern (`onRefetchNeeded`): der Server-Stand hat sich nicht geändert,
+    /// ein normaler Pull (`version > lastVersion`) brächte ihn nie zurück. Bis dahin bleibt der
+    /// lokale (abgelehnte) Inhalt stehen; der Neuabruf überschreibt ihn, weil er nicht mehr dirty ist.
     public func discardRejected(_ e: any SyncTracked) throws {
-        if e.version == nil, let model = e as? any PersistentModel {
+        let synced = e.version != nil
+        if !synced, let model = e as? any PersistentModel {
             context.delete(model)
         } else {
             e.rejectionReason = nil
             e.isDirty = false
         }
         try commit()
+        if synced { onRefetchNeeded() }
     }
 
     // MARK: Intern

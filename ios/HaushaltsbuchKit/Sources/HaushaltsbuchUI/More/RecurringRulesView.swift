@@ -17,12 +17,15 @@ struct RecurringRulesView: View {
     @State private var editing: RuleSheet?
     @State private var confirmDelete: RecurringRuleEntity?
     @State private var errorMessage: String?
+    @State private var rejected: RecurringRuleEntity?
 
     var body: some View {
         let byId = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         List {
             ForEach(rules.filter { !$0.deleted }) { rule in
-                Button { editing = .edit(rule) } label: { RuleRow(rule: rule, category: byId[rule.categoryId]) }
+                Button {
+                    if rule.rejectionReason != nil { rejected = rule } else { editing = .edit(rule) }
+                } label: { RuleRow(rule: rule, category: byId[rule.categoryId]) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("rules.row")
                     .swipeActions {
@@ -46,6 +49,15 @@ struct RecurringRulesView: View {
             }
         }
         .sheet(item: $editing) { RuleEditView(target: $0) }
+        .confirmationDialog("Konnte nicht gespeichert werden",
+                            isPresented: Binding(get: { rejected != nil }, set: { if !$0 { rejected = nil } }),
+                            titleVisibility: .visible, presenting: rejected) { rule in
+            Button("Bearbeiten") { editing = .edit(rule) }
+            Button("Verwerfen", role: .destructive) { discard(rule) }
+            Button("Abbrechen", role: .cancel) {}
+        } message: { rule in
+            Text(rule.rejectionReason ?? "")
+        }
         .confirmationDialog("Wiederkehrende Buchung löschen?",
                             isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
                             titleVisibility: .visible) {
@@ -58,6 +70,13 @@ struct RecurringRulesView: View {
             Button("OK") {}
         } message: {
             Text(errorMessage ?? "")
+        }
+    }
+
+    private func discard(_ rule: RecurringRuleEntity) {
+        do { try app.repository.discardRejected(rule) } catch {
+            logger.error("Verwerfen fehlgeschlagen: \(String(describing: error), privacy: .public)")
+            errorMessage = "Die Änderung konnte nicht verworfen werden."
         }
     }
 

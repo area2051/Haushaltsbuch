@@ -16,6 +16,8 @@ public protocol SyncScheduling: AnyObject {
     func appDidBecomeActive()
     func localChange()
     func pullToRefresh() async
+    /// Sofort synchronisieren (ohne Warten).
+    func requestSync()
 }
 
 extension SyncScheduler: SyncScheduling {}
@@ -139,9 +141,9 @@ public final class AppModel {
         self.defaults = defaults
         self.appLock = appLock ?? AppLock(defaults: defaults)
         self.dependencies = dependencies ?? .live(defaults: defaults)
-        repository = Repository(context: container.mainContext) { [weak self] in
-            self?.scheduler?.localChange()
-        }
+        repository = Repository(context: container.mainContext,
+                                onChange: { [weak self] in self?.scheduler?.localChange() },
+                                onRefetchNeeded: { [weak self] in self?.refetchFromScratch() })
         authStateChanged()
         observeAuth()
     }
@@ -251,6 +253,18 @@ public final class AppModel {
 
     public func pullToRefresh() async {
         await scheduler?.pullToRefresh()
+    }
+
+    /// Nach dem Verwerfen einer abgelehnten Änderung an einem synchronisierten Datensatz: Cursor auf 0
+    /// und sofort synchronisieren – der Neuabruf stellt den Server-Stand wieder her.
+    private func refetchFromScratch() {
+        if let engine {
+            engine.requestRefetch()
+        } else if let session {
+            var cursor = dependencies.makeCursor(session.serverURL, session.userId)
+            cursor.lastVersion = 0
+        }
+        scheduler?.requestSync()
     }
 
     // MARK: Server-Adresse

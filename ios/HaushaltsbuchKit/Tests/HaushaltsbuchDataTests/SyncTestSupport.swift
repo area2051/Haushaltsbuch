@@ -102,7 +102,12 @@ final class SyncFixture {
 
     let container: ModelContainer
     let context: ModelContext
-    let repo: Repository
+    private(set) lazy var repo = Repository(context: context, onRefetchNeeded: { [unowned self] in
+        self.refetchRequests += 1
+        self.engine.requestRefetch()
+    })
+    /// Aufrufe von `onRefetchNeeded` (Verwerfen einer abgelehnten synchronisierten Änderung).
+    private(set) var refetchRequests = 0
     let transport = FakeSyncTransport()
     let server = ServerSim()
     let cursor: InMemoryCursorStore
@@ -113,7 +118,6 @@ final class SyncFixture {
     init(lastVersion: Int = 0, batchSize: Int = 500) throws {
         container = try ModelContainer.makeAppContainer(inMemory: true)
         context = container.mainContext
-        repo = Repository(context: context)
         cursor = InMemoryCursorStore(lastVersion: lastVersion)
         engine = SyncEngine(context: context, transport: transport, cursor: cursor,
                             batchSize: batchSize, now: { SyncFixture.now })
