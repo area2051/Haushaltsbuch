@@ -52,14 +52,26 @@ enum ExportModel {
     /// Schreibt die CSV in eine temporäre Datei (`CSVExport.fileName`) und liefert deren URL.
     /// `txs` sind bereits ohne gelöschte Buchungen.
     static func writeFile(txs: [TxValue], categories: [CategoryValue], members: [UUID: String],
-                          range: ExportRange) throws -> URL {
+                          range: ExportRange, directory: URL = ExportModel.directory) throws -> URL {
         let byId = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let data = CSVExport.make(txs, categories: byId, members: members, from: range.from, to: range.to)
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Nur die aktuelle Datei behalten (keine alten Exporte im tmp-Ordner).
+        removeTemporaryFiles(in: directory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let dir = directory
         let url = dir.appendingPathComponent(CSVExport.fileName(from: range.from, to: range.to))
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// Ordner der temporären Exportdateien.
+    static var directory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
+    }
+
+    /// Löscht alle temporären Exportdateien (vor jedem Export und beim Abmelden).
+    static func removeTemporaryFiles(in directory: URL = ExportModel.directory) {
+        try? FileManager.default.removeItem(at: directory)
     }
 
     static func rowCount(txs: [TxValue], range: ExportRange) -> Int {
@@ -181,6 +193,12 @@ enum ServerStatusText {
         case 1: "1 ausstehende Änderung"
         default: "\(n) ausstehende Änderungen"
         }
+    }
+
+    /// Text unter der Rückfrage (ohne Annahme über die Ursache).
+    static func logoutDetail(_ n: Int) -> String {
+        n == 1 ? "1 Änderung konnte nicht übertragen werden und geht beim Abmelden verloren."
+            : "\(n) Änderungen konnten nicht übertragen werden und gehen beim Abmelden verloren."
     }
 
     static func logoutWarning(_ n: Int) -> String {

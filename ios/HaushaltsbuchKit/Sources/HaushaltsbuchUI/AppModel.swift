@@ -208,12 +208,14 @@ public final class AppModel {
 
     /// Abmelden (Spec §7 „Mehr“): vorher noch einmal synchronisieren (höchstens
     /// `logoutSyncTimeout`). Bleiben ungesendete Änderungen, passiert nichts und die Oberfläche
-    /// fragt nach (`needsDiscardConfirmation`); mit `discardPending` werden sie verworfen.
-    /// Danach: Sitzung beim Server beenden, lokalen Store leeren, Sync-Cursor zurücksetzen.
+    /// fragt nach (`needsDiscardConfirmation`); mit `discardPending` werden sie ohne erneuten
+    /// Sync-Versuch verworfen. Danach: Sitzung beim Server beenden, lokalen Store leeren,
+    /// Sync-Cursor zurücksetzen, temporäre Exportdateien löschen.
     ///
     /// Läuft dagegen nur die Sitzung ab (Refresh-Token ungültig), bleiben die Daten erhalten (§8).
     public func logout(discardPending: Bool = false) async -> LogoutOutcome {
-        if let engine {
+        // Nach der Bestätigung nicht erneut warten: der Sync-Versuch lief schon beim ersten Aufruf.
+        if !discardPending, let engine {
             await Self.runBounded(seconds: dependencies.logoutSyncTimeout) {
                 await engine.syncNow()
             }
@@ -225,6 +227,7 @@ public final class AppModel {
         let session = self.session
         deactivate()
         await auth.logout()
+        ExportModel.removeTemporaryFiles()
         do {
             try dependencies.wipeStore(container.mainContext)
             defaults.removeObject(forKey: Self.dataUsernameKey)

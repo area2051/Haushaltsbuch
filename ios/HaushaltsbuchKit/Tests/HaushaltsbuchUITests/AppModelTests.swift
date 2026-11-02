@@ -175,9 +175,20 @@ import HaushaltsbuchData
     #expect(f.transport.calls("logout") == 0)
     #expect(try f.count(TransactionEntity.self) == 1)
 
+    // Temporäre Exportdatei wird beim Abmelden mit gelöscht.
+    try FileManager.default.createDirectory(at: ExportModel.directory, withIntermediateDirectories: true)
+    let exportFile = ExportModel.directory.appendingPathComponent("Haushaltsbuch_test.csv")
+    try Data("x".utf8).write(to: exportFile)
+    #expect(f.defaults.string(forKey: AppModel.dataUsernameKey) == "anna")
+    #expect(f.defaults.url(forKey: AppModel.dataServerKey) == AppFixtures.serverURL)
+
     f.transport.enqueue("logout", .empty(204))
     let second = await f.model.logout(discardPending: true)
     #expect(second == .loggedOut)
+    #expect(f.syncTransport.requests == 1)               // nach Bestätigung kein zweiter Sync-Versuch
+    #expect(!FileManager.default.fileExists(atPath: exportFile.path))
+    #expect(f.defaults.string(forKey: AppModel.dataUsernameKey) == nil)
+    #expect(f.defaults.url(forKey: AppModel.dataServerKey) == nil)
     #expect(f.model.phase == .locked)
     #expect(f.model.engine == nil)
     #expect(f.store.load() == nil)
@@ -205,6 +216,23 @@ import HaushaltsbuchData
     f.transport.enqueue("login", AppFixtures.loginOK(id: AppFixtures.bertId, username: "bert"))
     #expect(try await f.model.login(username: "bert", password: "geheim123") == .loggedIn)
     #expect(f.model.phase == .ready)
+}
+
+/// Leeren scheitert: Daten und Besitzer-Schlüssel bleiben (ein anderer Benutzer löst dann den
+/// Wechsel-Ablauf mit Rückfrage aus), abgemeldet wird trotzdem.
+@MainActor @Test func logoutWipeFailureKeepsDataAndOwnerKeys() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna",
+                           wipe: { _, _ in throw WipeFailure() })
+    try f.addPendingTransaction()
+    f.transport.enqueue("logout", .empty(204))
+    #expect(await f.model.logout(discardPending: true) == .loggedOut)
+    #expect(f.model.phase == .locked)
+    #expect(f.store.load() == nil)
+    #expect(try f.count(TransactionEntity.self) == 1)
+    #expect(f.defaults.string(forKey: AppModel.dataUsernameKey) == "anna")
+    #expect(f.defaults.url(forKey: AppModel.dataServerKey) == AppFixtures.serverURL)
+    let other = try await f.model.login(username: "bert", password: "geheim123")
+    #expect(other == .needsDiscardConfirmation(pending: 2))
 }
 
 @MainActor @Test func logoutKeepsAppLockSetting() async throws {

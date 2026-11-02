@@ -93,6 +93,8 @@ struct MemberEditView: View {
             }
         }
         .accessibilityIdentifier("memberEditSheet")
+        // Wischen schließt sonst ohne `close()` (Passwort würde nicht vorher geleert).
+        .interactiveDismissDisabled(!password.isEmpty)
         .onChange(of: "\(username)|\(displayName)|\(password)|\(isAdmin)") { errorMessage = nil }
         .onAppear {
             guard !loaded else { return }

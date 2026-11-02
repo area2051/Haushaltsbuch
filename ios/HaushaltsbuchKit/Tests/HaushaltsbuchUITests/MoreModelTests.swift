@@ -26,7 +26,14 @@ private func day(_ y: Int, _ m: Int, _ d: Int) -> CalendarDay { CalendarDay(year
     let txs = [TxValue(id: UUID(), amountCents: 1250, kind: .expense, categoryId: cat.id, day: day(2026, 11, 2), paidBy: anna, note: "Brot"),
                TxValue(id: UUID(), amountCents: 999, kind: .expense, categoryId: cat.id, day: day(2026, 10, 31), paidBy: anna, note: nil)]
     let range = ExportRange(from: day(2026, 11, 1), to: day(2026, 11, 30))
-    let url = try ExportModel.writeFile(txs: txs, categories: [cat], members: [anna: "Anna"], range: range)
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ExportTest-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let old = try ExportModel.writeFile(txs: txs, categories: [cat], members: [anna: "Anna"],
+                                        range: ExportRange(from: day(2026, 10, 1), to: day(2026, 10, 31)), directory: dir)
+    let url = try ExportModel.writeFile(txs: txs, categories: [cat], members: [anna: "Anna"], range: range, directory: dir)
+    // Vor jedem Export werden ältere Dateien gelöscht.
+    #expect(!FileManager.default.fileExists(atPath: old.path))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == [url.lastPathComponent])
     #expect(url.lastPathComponent == "Haushaltsbuch_2026-11-01_2026-11-30.csv")
     let data = try Data(contentsOf: url)
     #expect(data == CSVExport.make(txs, categories: [cat.id: cat], members: [anna: "Anna"],
@@ -96,4 +103,6 @@ private func day(_ y: Int, _ m: Int, _ d: Int) -> CalendarDay { CalendarDay(year
     #expect(ServerStatusText.pending(3) == "3 ausstehende Änderungen")
     #expect(ServerStatusText.logoutWarning(1) == "1 ungesendete Änderung geht verloren")
     #expect(ServerStatusText.logoutWarning(3) == "3 ungesendete Änderungen gehen verloren")
+    #expect(ServerStatusText.logoutDetail(1) == "1 Änderung konnte nicht übertragen werden und geht beim Abmelden verloren.")
+    #expect(ServerStatusText.logoutDetail(3) == "3 Änderungen konnten nicht übertragen werden und gehen beim Abmelden verloren.")
 }

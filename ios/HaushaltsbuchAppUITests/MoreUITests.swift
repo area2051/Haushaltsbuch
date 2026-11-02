@@ -12,6 +12,39 @@ final class MoreUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Nach dem Abmelden (Anmeldebildschirm mit vorausgefülltem Benutzer) wieder anmelden.
+    @MainActor
+    func test0Login() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let pw = app.secureTextFields["login.password"]
+        guard pw.waitForExistence(timeout: 10) else { throw XCTSkip("kein Anmeldebildschirm") }
+        type(pw, try XCTUnwrap(env["HB_PASSWORD"]))
+        app.buttons["login.submit"].tap()
+        let opener = isPad ? app.buttons["toolbar.add"] : app.tabBars.buttons["Neu"]
+        XCTAssertTrue(opener.waitForExistence(timeout: 20), "Anmeldung fehlgeschlagen")
+        Thread.sleep(forTimeInterval: 3)
+    }
+
+    /// Sperre an, Buchungen öffnen, Home: danach den App-Umschalter von außen öffnen und prüfen,
+    /// dass der Schnappschuss den Sperrbildschirm zeigt.
+    @MainActor
+    func test7SwitcherPrep() throws {
+        let app = try launch()
+        openSection(app, "Mehr")
+        let toggle = app.switches["more.faceID"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        if (toggle.value as? String) != "1" { toggle.switches.firstMatch.tap() }
+        openSection(app, "Buchungen")
+        XCTAssertTrue(app.navigationBars["Buchungen"].waitForExistence(timeout: 5))
+        let search = app.searchFields.firstMatch
+        if search.waitForExistence(timeout: 3) { search.tap() }   // Fokus/Tastatur offen
+        Thread.sleep(forTimeInterval: 1)
+        shot("switcher-0-before-home")
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 2)
+    }
+
     @MainActor
     func test1Members() throws {
         let app = try launch()

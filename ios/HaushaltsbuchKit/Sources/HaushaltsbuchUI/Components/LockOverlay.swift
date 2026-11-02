@@ -56,6 +56,8 @@ final class LockWindowAnchorView: UIView {
     private let lock: AppLock
     private var lockWindow: UIWindow?
     private var subscription: AnyCancellable?
+    // Nur im deinit außerhalb des Main Actors gelesen (dann gibt es keine anderen Zugriffe mehr).
+    nonisolated(unsafe) private var backgroundObserver: (any NSObjectProtocol)?
 
     init(lock: AppLock) {
         self.lock = lock
@@ -72,20 +74,50 @@ final class LockWindowAnchorView: UIView {
         let w = UIWindow(windowScene: scene)
         w.windowLevel = .alert + 1
         let host = UIHostingController(rootView: LockScreen(lock: lock))
+        // VoiceOver bleibt im Sperrfenster (nicht im Fenster darunter).
+        host.view.accessibilityViewIsModal = true
         w.rootViewController = host
         lockWindow = w
+        // Synchron (ohne `receive(on:)`): `isLocked` wird in `scenePhaseChanged(.background)` auf dem
+        // Main Actor gesetzt; das Fenster muss sofort sichtbar sein, bevor iOS den Schnappschuss für
+        // den App-Umschalter aufnimmt.
         subscription = lock.$isLocked
             .removeDuplicates()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] locked in
                 MainActor.assumeIsolated { self?.setVisible(locked) }
             }
         setVisible(lock.isLocked)
+
+        // SwiftUIs `scenePhase == .background` kommt erst nach dem Schnappschuss für den
+        // App-Umschalter an. Die Szenen-Benachrichtigung kommt synchron davor: hier sperren.
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIScene.didEnterBackgroundNotification, object: scene, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.lock.scenePhaseChanged(.background)
+                if self.lock.isLocked {
+                    self.lockWindow?.layoutIfNeeded()
+                    CATransaction.flush()   // vor dem Schnappschuss rendern
+                }
+            }
+        }
     }
 
+    deinit {
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+    }
+
+    /// Sichtbar: Eingabe im Hauptfenster beenden (Tastatur weg, keine Eingaben in verdeckte Felder)
+    /// und das Sperrfenster zum Key-Window machen. Unsichtbar: Hauptfenster wieder Key-Window.
     private func setVisible(_ visible: Bool) {
         guard let lockWindow else { return }
-        lockWindow.isHidden = !visible
-        if !visible { window?.makeKey() }
+        if visible {
+            window?.endEditing(true)
+            lockWindow.makeKeyAndVisible()
+        } else {
+            lockWindow.isHidden = true
+            window?.makeKey()
+        }
     }
 }

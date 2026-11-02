@@ -63,7 +63,7 @@ struct MoreView: View {
                     Button("Trotzdem abmelden", role: .destructive) { logout(discard: true) }
                     Button("Abbrechen", role: .cancel) {}
                 } message: {
-                    Text("Der Server ist nicht erreichbar. Nicht übertragene Änderungen werden beim Abmelden gelöscht.")
+                    Text(discardPending.map(ServerStatusText.logoutDetail) ?? "")
                 }
             }
         }
