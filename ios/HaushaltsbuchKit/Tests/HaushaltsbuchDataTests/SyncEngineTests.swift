@@ -291,6 +291,32 @@ import HaushaltsbuchCore
     #expect(try f.all(TransactionEntity.self).count == 1)
 }
 
+@MainActor @Test func unreachableBetweenBatchesKeepsFirstBatch() async throws {
+    let f = try SyncFixture(lastVersion: 3, batchSize: 2)
+    let cat = try f.makeCategory()
+    let a = try f.addTx(category: cat.id, amount: 1)
+    let b = try f.addTx(category: cat.id, amount: 2)
+    let server = f.server
+    server.currentVersion = 3
+    f.transport.handle { req in
+        if req.lastVersion == 3 { return server.handle(req) }
+        throw APIError(URLError(.notConnectedToInternet))
+    }
+
+    await f.engine.syncNow()
+
+    #expect(f.transport.requests.count == 2)
+    #expect(f.transport.requests.last?.lastVersion == 5)
+    let firstIds = Set(f.transport.requests.first?.changes.transactions?.map(\.id) ?? [])
+    let (sent, unsent) = firstIds.contains(a.id.uuidString.lowercased()) ? (a, b) : (b, a)
+    #expect(f.cursor.lastVersion == 5)  // currentVersion von Paket 1
+    #expect(!cat.isDirty && cat.version == 4)
+    #expect(!sent.isDirty && sent.version == 5)
+    #expect(unsent.isDirty && unsent.version == nil)
+    #expect(f.engine.status == .offline(pending: 1))
+    #expect(f.engine.lastPass == SyncPass(number: 1, result: .failed))
+}
+
 @MainActor @Test func serverErrorReportsErrorAndUnauthorizedStops() async throws {
     let f = try SyncFixture()
     _ = try f.makeCategory()
@@ -428,6 +454,7 @@ import HaushaltsbuchCore
     await task.value
 
     #expect(f.engine.status == .idle)
+    #expect(f.engine.lastPass == SyncPass(number: 1, result: .cancelled))
     #expect(cat.isDirty)
     #expect(f.cursor.lastVersion == 0)
 }
@@ -455,6 +482,7 @@ import HaushaltsbuchCore
 
     #expect(f.transport.requests.count == 2)  // ein Durchlauf + genau ein Nachlauf
     #expect(f.transport.maxInFlight == 1)
+    #expect(f.engine.lastPass == SyncPass(number: 2, result: .succeeded))
     #expect(f.engine.status == .upToDate(SyncFixture.now))
 }
 

@@ -88,6 +88,28 @@ public final class InMemoryCursorStore: SyncCursorStore {
 
 // MARK: Status
 
+/// Ein abgeschlossener Engine-Durchlauf. Der Scheduler wertet jede Nummer nur einmal aus, auch wenn
+/// mehrere Aufrufer auf denselben (zusammengefassten) Durchlauf gewartet haben.
+public struct SyncPass: Equatable, Sendable {
+    public enum Result: Equatable, Sendable {
+        case succeeded
+        /// Offline oder Fehler – Wiederholversuch mit Backoff.
+        case failed
+        /// Abgebrochen – kein Fehler, kein Wiederholversuch.
+        case cancelled
+        /// Sitzung ungültig – kein Wiederholversuch.
+        case unauthorized
+    }
+
+    public let number: Int
+    public let result: Result
+
+    public init(number: Int, result: Result) {
+        self.number = number
+        self.result = result
+    }
+}
+
 public enum SyncStatus: Equatable, Sendable {
     case idle
     case syncing
@@ -116,6 +138,8 @@ public final class SyncEngine: ObservableObject, SyncRunning {
     public static let defaultBatchSize = 500
 
     @Published public private(set) var status: SyncStatus = .idle
+    /// Ergebnis des zuletzt abgeschlossenen Durchlaufs (fortlaufend nummeriert).
+    public private(set) var lastPass: SyncPass?
 
     private let context: ModelContext
     private let transport: any SyncTransport
@@ -138,13 +162,15 @@ public final class SyncEngine: ObservableObject, SyncRunning {
 
     /// Anzahl noch nicht übertragener Änderungen (abgelehnte zählen nicht).
     public var pendingCount: Int {
-        let counts = try? [
-            context.fetchCount(CategoryEntity.dirtyFetch),
-            context.fetchCount(RecurringRuleEntity.dirtyFetch),
-            context.fetchCount(TransactionEntity.dirtyFetch),
-            context.fetchCount(BudgetEntity.dirtyFetch),
-        ]
-        return counts?.reduce(0, +) ?? 0
+        do {
+            return try context.fetchCount(CategoryEntity.dirtyFetch)
+                + context.fetchCount(RecurringRuleEntity.dirtyFetch)
+                + context.fetchCount(TransactionEntity.dirtyFetch)
+                + context.fetchCount(BudgetEntity.dirtyFetch)
+        } catch {
+            logger.error("Ausstehende Änderungen nicht zählbar: \(String(describing: error), privacy: .public)")
+            return 0
+        }
     }
 
     /// Synchronisiert jetzt. Läuft bereits ein Sync, wird kein zweiter gestartet: der Aufruf merkt
@@ -169,27 +195,36 @@ public final class SyncEngine: ObservableObject, SyncRunning {
     // MARK: Ablauf
 
     private func runOnce() async {
+        let result = await runPass()
+        lastPass = SyncPass(number: (lastPass?.number ?? 0) + 1, result: result)
+    }
+
+    private func runPass() async -> SyncPass.Result {
         let previous = status
         status = .syncing
         do {
             try await pushAndPull()
             status = .upToDate(now())
+            return .succeeded
         } catch {
             let apiError = APIError(error)
             if apiError == .cancelled || Task.isCancelled {
                 // Abbruch ist kein Fehler: still aufhören.
                 status = previous
-                return
+                return .cancelled
             }
             switch apiError {
             case .unreachable:
                 status = .offline(pending: pendingCount)
+                return .failed
             case .unauthorized:
                 // AuthService hat die Sitzung verworfen und zeigt die Anmeldung.
                 status = .idle
+                return .unauthorized
             default:
                 logger.error("Sync fehlgeschlagen: \(String(describing: apiError), privacy: .public)")
                 status = .error(apiError.germanMessage, pending: pendingCount)
+                return .failed
             }
         }
     }

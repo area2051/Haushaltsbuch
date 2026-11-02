@@ -2,16 +2,57 @@ import Foundation
 import Testing
 @testable import HaushaltsbuchData
 
-/// Engine-Attrappe: zählt Syncs und setzt danach den vorgegebenen Status.
+/// Engine-Attrappe: zählt Durchläufe und setzt danach Status und Ergebnis wie vorgegeben. Mit
+/// `hold = true` bleibt der nächste Durchlauf bis `release()` offen; Aufrufe währenddessen warten wie
+/// bei der echten Engine auf denselben Durchlauf (zusammengefasst).
 @MainActor
 final class FakeEngine: SyncRunning {
     private(set) var status: SyncStatus = .idle
+    private(set) var lastPass: SyncPass?
     private(set) var syncCount = 0
     var nextStatus: SyncStatus = .upToDate(Date(timeIntervalSince1970: 0))
+    /// Ergebnis des Durchlaufs; ohne Vorgabe aus `nextStatus` abgeleitet.
+    var nextResult: SyncPass.Result?
+    var hold = false
+    private var running = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var gate: CheckedContinuation<Void, Never>?
+
+    var isHolding: Bool { gate != nil }
 
     func syncNow() async {
+        if running {
+            await withCheckedContinuation { waiters.append($0) }
+            return
+        }
+        running = true
+        if hold {
+            await withCheckedContinuation { gate = $0 }
+        }
         syncCount += 1
         status = nextStatus
+        let result: SyncPass.Result
+        if let nextResult {
+            result = nextResult
+        } else {
+            switch nextStatus {
+            case .upToDate: result = .succeeded
+            case .offline, .error: result = .failed
+            case .idle, .syncing: result = .unauthorized
+            }
+        }
+        lastPass = SyncPass(number: syncCount, result: result)
+        running = false
+        let done = waiters
+        waiters = []
+        done.forEach { $0.resume() }
+    }
+
+    func release() {
+        hold = false
+        let g = gate
+        gate = nil
+        g?.resume()
     }
 }
 
@@ -151,4 +192,62 @@ private struct SchedulerFixture {
     f.scheduler.appDidBecomeActive()
     await waitUntil { f.engine.syncCount == 2 }
     #expect(f.engine.syncCount == 2)
+}
+
+@MainActor @Test func schedulerStopDuringFailingSyncSchedulesNoRetry() async throws {
+    let f = SchedulerFixture()
+    f.engine.nextStatus = .offline(pending: 1)
+    f.engine.hold = true
+    f.scheduler.start()
+    await waitUntil { f.engine.isHolding }
+
+    f.scheduler.stop()  // Abmelden, während der Sync noch läuft und gleich fehlschlägt
+    f.engine.release()
+    await waitUntil { f.engine.syncCount == 1 }
+    for _ in 0..<50 { await Task.yield() }
+
+    #expect(f.sleeper.requested.isEmpty)
+    #expect(f.engine.syncCount == 1)
+    // Auch Vordergrund, lokale Änderung und Netzmeldungen lösen nach stop() nichts aus.
+    f.scheduler.appDidBecomeActive()
+    f.scheduler.localChange()
+    f.network.emit(false)
+    f.network.emit(true)
+    for _ in 0..<50 { await Task.yield() }
+    #expect(f.engine.syncCount == 1)
+    #expect(f.sleeper.requested.isEmpty)
+}
+
+@MainActor @Test func schedulerCancelledPassIsNoFailure() async throws {
+    let f = SchedulerFixture()
+    // Abgebrochener Durchlauf mit wiederhergestelltem Status „offline“: kein Fehlschlag, kein Retry.
+    f.engine.nextStatus = .offline(pending: 1)
+    f.engine.nextResult = .cancelled
+    await f.scheduler.pullToRefresh()
+    for _ in 0..<50 { await Task.yield() }
+    #expect(f.sleeper.requested.isEmpty)
+
+    // Der nächste echte Fehlschlag beginnt beim ersten Backoff-Schritt.
+    f.engine.nextResult = nil
+    await f.scheduler.pullToRefresh()
+    await waitUntil { f.sleeper.pendingCount == 1 }
+    #expect(f.sleeper.requested == [5])
+}
+
+@MainActor @Test func schedulerCountsCoalescedPassOnce() async throws {
+    let f = SchedulerFixture()
+    f.engine.nextStatus = .offline(pending: 1)
+    f.engine.hold = true
+    let a = Task { await f.scheduler.pullToRefresh() }
+    await waitUntil { f.engine.isHolding }
+    let b = Task { await f.scheduler.pullToRefresh() }
+    for _ in 0..<20 { await Task.yield() }
+    f.engine.release()
+    await a.value
+    await b.value
+    await waitUntil { f.sleeper.pendingCount == 1 }
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(f.engine.syncCount == 1)
+    #expect(f.sleeper.requested == [5])  // ein Fehlschlag, nicht zwei (wäre [5, 10])
 }

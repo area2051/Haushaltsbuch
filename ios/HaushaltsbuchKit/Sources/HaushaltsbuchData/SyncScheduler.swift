@@ -5,6 +5,8 @@ import Network
 @MainActor
 public protocol SyncRunning: AnyObject {
     var status: SyncStatus { get }
+    /// Zuletzt abgeschlossener Durchlauf; `nil`, solange keiner fertig ist.
+    var lastPass: SyncPass? { get }
     func syncNow() async
 }
 
@@ -67,9 +69,14 @@ public final class SyncScheduler {
 
     private var debounceTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    private var syncTasks: [UUID: Task<Void, Never>] = [:]
     private var failures = 0
     private var networkSatisfied: Bool?
     private var started = false
+    /// Nach `stop()` (Abmelden) löst nichts mehr einen Sync aus, bis `start()` erneut gerufen wird.
+    private var stopped = false
+    /// Nummer des zuletzt ausgewerteten Engine-Durchlaufs.
+    private var lastHandledPass = 0
 
     public init(engine: any SyncRunning, sleeper: any Sleeper = TaskSleeper(),
                 pathMonitor: any NetworkStatusProviding = NWPathNetworkStatus()) {
@@ -82,6 +89,7 @@ public final class SyncScheduler {
     public func start() {
         guard !started else { return }
         started = true
+        stopped = false
         pathMonitor.start { [weak self] satisfied in
             self?.networkChanged(satisfied)
         }
@@ -91,12 +99,16 @@ public final class SyncScheduler {
     /// Beendet Beobachtung und wartende Versuche (z. B. beim Abmelden).
     public func stop() {
         started = false
+        stopped = true
         pathMonitor.stop()
         networkSatisfied = nil
         debounceTask?.cancel()
         debounceTask = nil
         retryTask?.cancel()
         retryTask = nil
+        syncTasks.values.forEach { $0.cancel() }
+        syncTasks = [:]
+        failures = 0
     }
 
     public func appDidBecomeActive() {
@@ -105,6 +117,7 @@ public final class SyncScheduler {
 
     /// Nach jeder lokalen Änderung; synchronisiert 2 s nach der letzten.
     public func localChange() {
+        guard !stopped else { return }
         debounceTask?.cancel()
         debounceTask = Task { [weak self] in
             guard let self else { return }
@@ -122,7 +135,12 @@ public final class SyncScheduler {
     // MARK: Intern
 
     private func trigger() {
-        Task { await self.runSync() }
+        guard !stopped else { return }
+        let id = UUID()
+        syncTasks[id] = Task { [weak self] in
+            await self?.runSync()
+            self?.syncTasks[id] = nil
+        }
     }
 
     private func networkChanged(_ satisfied: Bool) {
@@ -136,22 +154,29 @@ public final class SyncScheduler {
     }
 
     private func runSync() async {
+        guard !stopped else { return }
         await engine.syncNow()
-        switch engine.status {
-        case .upToDate:
+        guard !stopped, let pass = engine.lastPass, pass.number > lastHandledPass else {
+            // Abgemeldet, oder ein anderer Aufrufer hat diesen (zusammengefassten) Durchlauf schon ausgewertet.
+            return
+        }
+        lastHandledPass = pass.number
+        switch pass.result {
+        case .succeeded:
             failures = 0
             retryTask?.cancel()
             retryTask = nil
-        case .offline, .error:
+        case .failed:
             failures += 1
             scheduleRetry()
-        case .idle, .syncing:
-            // Abgemeldet oder abgebrochen: kein automatischer Wiederholversuch.
+        case .cancelled, .unauthorized:
+            // Abbruch ist kein Fehlschlag; abgemeldet: kein automatischer Wiederholversuch.
             break
         }
     }
 
     private func scheduleRetry() {
+        guard !stopped else { return }
         let delay = min(Self.initialBackoffSeconds * pow(2, Double(min(failures, 32) - 1)), Self.maxBackoffSeconds)
         retryTask?.cancel()
         retryTask = Task { [weak self] in
