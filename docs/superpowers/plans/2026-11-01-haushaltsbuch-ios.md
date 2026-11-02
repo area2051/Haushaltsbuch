@@ -213,8 +213,8 @@ docs/ios.md                         Build, Installation auf Geräten, Server-Adr
   - `func saveCategory(_ draft: CategoryDraft) throws -> CategoryEntity` (anlegen/ändern), `func removeCategory(_ c: CategoryEntity) throws` – hat die Kategorie nicht gelöschte Buchungen oder Regeln → `archived = true`, sonst `deleted = true`; `func moveCategories(_ ordered: [CategoryEntity]) throws` (sortOrder neu)
   - `func setBudget(categoryId: UUID, monthlyLimitCents: Int?) throws` – `nil` löscht das aktive Budget (soft)
   - `func saveRule(_ draft: RuleDraft) throws -> RecurringRuleEntity`, `func deleteRule(_ r: RecurringRuleEntity) throws`
-  - `func discardRejected(_ e: any SyncTracked) throws` – nie synchronisiert → hart löschen; sonst `rejectionReason = nil`, `isDirty = false` (nächster Pull bringt Server-Stand)
-  - `var pendingChangesCount: Int` (Anzahl dirty über alle Typen)
+  - `func discardRejected(_ e: any SyncTracked) throws` – nie synchronisiert → hart löschen; sonst `rejectionReason = nil`, `isDirty = false` und Neuabruf anfordern (`onRefetchNeeded`: Sync-Cursor auf 0, Sync über den Scheduler anstoßen). Ein normaler Pull bringt den Server-Stand *nicht* zurück: der Server liefert nur Zeilen mit `version > lastVersion`, und die abgelehnte Zeile hat sich dort nicht geändert. Erst der Abruf ab Version 0 überschreibt die (nicht mehr dirty) lokale Kopie mit dem Server-Stand. Die Engine setzt den Cursor ebenfalls auf 0, sobald eine Antwort einen schon synchronisierten Datensatz ablehnt; ein abgelehntes Löschen wird wieder sichtbar (`deleted = false`), und abgelehnte Zeilen werden von Pulls nicht überschrieben, bis sie bearbeitet oder verworfen sind.
+  - `func pendingChanges() throws -> PendingChanges` (dirty und abgelehnte über alle Typen; wirft bei Lesefehlern – vor dem Löschen nie als „nichts ausstehend“ werten)
   - Alle Schreibmethoden setzen `markDirty()`, speichern den Context und rufen `onChange()`.
 
 - [ ] **Step 1: Failing Tests** (In-Memory-Container)
