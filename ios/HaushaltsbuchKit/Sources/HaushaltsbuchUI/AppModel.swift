@@ -83,17 +83,21 @@ public final class AppModel {
         public var wipeStore: @MainActor (ModelContext) throws -> Void
         /// Höchstdauer des Syncs vor dem Abmelden (offline sonst bis zum Request-Timeout).
         public var logoutSyncTimeout: Double
+        /// Höchstdauer des Token-Widerrufs beim Abmelden (offline sonst bis zum Request-Timeout).
+        public var logoutRevokeTimeout: Double
 
         public init(makeTransport: @escaping @MainActor (Client) -> any SyncTransport,
                     makeCursor: @escaping @MainActor (URL, UUID) -> any SyncCursorStore,
                     makeScheduler: @escaping @MainActor (SyncEngine) -> any SyncScheduling,
                     wipeStore: @escaping @MainActor (ModelContext) throws -> Void = { try AppModel.deleteAllRecords(in: $0) },
-                    logoutSyncTimeout: Double = 5) {
+                    logoutSyncTimeout: Double = 5,
+                    logoutRevokeTimeout: Double = 5) {
             self.makeTransport = makeTransport
             self.makeCursor = makeCursor
             self.makeScheduler = makeScheduler
             self.wipeStore = wipeStore
             self.logoutSyncTimeout = logoutSyncTimeout
+            self.logoutRevokeTimeout = logoutRevokeTimeout
         }
 
         public static func live(defaults: UserDefaults = .standard) -> Dependencies {
@@ -125,6 +129,9 @@ public final class AppModel {
     @ObservationIgnored private let dependencies: Dependencies
     /// Während eines Benutzerwechsels: Sitzung erst nach dem Leeren des Stores aktivieren.
     @ObservationIgnored private var holdActivation = false
+    /// Während des ganzen Abmeldens: keine Sitzung (wieder) aktivieren – auch nicht, wenn ein
+    /// Token-Refresh während des Widerrufs `.loggedIn(erneuert)` meldet.
+    @ObservationIgnored private var loggingOut = false
     /// Während eines Benutzerwechsels der Anmeldezustand von vorher: die Oberfläche bleibt auf dem
     /// Anmelde-/Einrichtungsbildschirm, bis die alten Daten gelöscht sind (beobachtet).
     private var frozenAuthState: AuthState?
@@ -216,6 +223,8 @@ public final class AppModel {
     ///
     /// Läuft dagegen nur die Sitzung ab (Refresh-Token ungültig), bleiben die Daten erhalten (§8).
     public func logout(discardPending: Bool = false) async -> LogoutOutcome {
+        loggingOut = true
+        defer { loggingOut = false }
         // Nach der Bestätigung nicht erneut warten: der Sync-Versuch lief schon beim ersten Aufruf.
         if !discardPending, let engine {
             await Self.runBounded(seconds: dependencies.logoutSyncTimeout) {
@@ -228,7 +237,7 @@ public final class AppModel {
         }
         let session = self.session
         deactivate()
-        await auth.logout()
+        await revokeBounded()
         ExportModel.removeTemporaryFiles()
         do {
             try dependencies.wipeStore(container.mainContext)
@@ -244,6 +253,22 @@ public final class AppModel {
             cursor.lastVersion = 0
         }
         return .loggedOut
+    }
+
+    /// `auth.logout()` mit Zeitlimit: danach wird der Widerruf abgebrochen (best effort, die Sitzung
+    /// wird trotzdem lokal verworfen) – offline wartet das Abmelden so nicht bis zum Request-Timeout.
+    private func revokeBounded() async {
+        let auth = self.auth
+        let revoke = Task { @MainActor in await auth.logout() }
+        let timeout = dependencies.logoutRevokeTimeout
+        let timer = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(timeout))
+            guard !Task.isCancelled else { return }
+            revoke.cancel()
+        }
+        // Auch nach dem Abbruch abwarten: `auth.logout()` verwirft die Sitzung erst am Ende.
+        await revoke.value
+        timer.cancel()
     }
 
     public func scenePhaseChanged(_ phase: ScenePhase) {
@@ -375,7 +400,7 @@ public final class AppModel {
             return
         }
         let key = SessionKey(serverURL: session.serverURL, userId: session.userId)
-        guard !holdActivation, activeSession != key, let client = auth.client else { return }
+        guard !holdActivation, !loggingOut, activeSession != key, let client = auth.client else { return }
         deactivate()
         let engine = SyncEngine(context: container.mainContext,
                                 transport: dependencies.makeTransport(client),
@@ -390,6 +415,9 @@ public final class AppModel {
     }
 
     private func deactivate() {
+        // Laufende Durchläufe (auch „Jetzt synchronisieren“/Pull-to-Refresh) wenden ihre Antwort
+        // danach nicht mehr an – sonst könnten sie den gerade geleerten Store wieder füllen.
+        engine?.invalidate()
         scheduler?.stop()
         scheduler = nil
         engine = nil

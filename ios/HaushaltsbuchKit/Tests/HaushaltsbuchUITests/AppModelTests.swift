@@ -333,6 +333,51 @@ struct WipeFailure: Error {}
     #expect(tx.rejectionReason == nil)
 }
 
+// MARK: Final-Review: sicheres Abmelden
+
+/// Ein Token-Refresh während des Widerrufs meldet `.loggedIn(erneuert)` – das darf keine neue
+/// Engine/keinen neuen Scheduler starten (sonst würde z. B. Verworfenes doch noch gesendet).
+@MainActor @Test func refreshDuringLogoutDoesNotReactivateSync() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna")
+    let oldEngine = try #require(f.model.engine)
+    #expect(f.schedulers.count == 1)
+    f.transport.enqueue("logout", .delayed(0.3, .empty(204)), .empty(204))
+    f.transport.enqueue("listUsers", AppFixtures.error(401, code: "unauthorized"))
+    f.transport.enqueue("refresh", .json(200, #"{"accessToken":"a2","refreshToken":"r2"}"#))
+
+    let logout = Task { await f.model.logout(discardPending: true) }
+    await waitUntil { f.transport.calls("logout") == 1 }
+    _ = try? await f.auth.client?.listUsers()
+    guard case let .loggedIn(renewed) = f.auth.state else {
+        Issue.record("Refresh hat die Sitzung nicht erneuert: \(f.auth.state)")
+        return
+    }
+    #expect(renewed.accessToken == "a2")
+    // Beobachtung von `auth.state` (asynchron) Zeit geben.
+    for _ in 0..<20 { await Task.yield() }
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(f.schedulers.count == 1)
+    #expect(f.model.engine == nil)
+
+    #expect(await logout.value == .loggedOut)
+    #expect(f.schedulers.count == 1)
+    #expect(f.model.engine == nil)
+    #expect(oldEngine.isInvalidated)
+    #expect(f.model.phase == .locked)
+    #expect(f.store.load() == nil)
+}
+
+@MainActor @Test func offlineLogoutRevokeIsBounded() async throws {
+    let f = try AppFixture(session: AppFixtures.session(), lastUsername: "anna", logoutRevokeTimeout: 0.1)
+    f.transport.enqueue("logout", .hangUntilCancelled)
+    let start = ContinuousClock.now
+    #expect(await f.model.logout(discardPending: true) == .loggedOut)
+    #expect(ContinuousClock.now - start < .seconds(2))
+    #expect(f.model.phase == .locked)
+    #expect(f.store.load() == nil)
+    #expect(f.model.engine == nil)
+}
+
 // MARK: Hilfsfunktionen
 
 @Test func normalizesServerInput() {

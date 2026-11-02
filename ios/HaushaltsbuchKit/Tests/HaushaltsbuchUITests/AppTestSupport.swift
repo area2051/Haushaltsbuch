@@ -14,6 +14,10 @@ final class StubClientTransport: ClientTransport, Sendable {
         case json(Int, String)
         case empty(Int)
         case failure(URLError.Code)
+        /// Antwortet nie; wirft erst beim Abbruch der Task (hängender Request, z. B. offline).
+        case hangUntilCancelled
+        /// Antwortet nach `seconds` mit `reply`.
+        indirect case delayed(Double, Reply)
     }
 
     private struct State {
@@ -40,7 +44,16 @@ final class StubClientTransport: ClientTransport, Sendable {
             s.queues[operationID] = q
             return first
         }
+        return try await resolve(reply)
+    }
+
+    private func resolve(_ reply: Reply?) async throws -> (HTTPResponse, HTTPBody?) {
         switch reply {
+        case .hangUntilCancelled:
+            while true { try await Task.sleep(for: .milliseconds(10)) }
+        case let .delayed(seconds, inner):
+            try await Task.sleep(for: .seconds(seconds))
+            return try await resolve(inner)
         case let .json(status, json):
             var response = HTTPResponse(status: .init(code: status))
             response.headerFields[.contentType] = "application/json; charset=utf-8"
@@ -145,7 +158,7 @@ final class AppFixture {
     /// - Parameter realSyncTransport: `true` → `ClientSyncTransport` über den Fake-Client
     ///   (für Tests mit Token-Ablauf); sonst `syncTransport`.
     init(session: StoredSession? = nil, lastUsername: String? = nil, realSyncTransport: Bool = false,
-         hangingSync: Bool = false, logoutSyncTimeout: Double = 5,
+         hangingSync: Bool = false, logoutSyncTimeout: Double = 5, logoutRevokeTimeout: Double = 5,
          wipe: (@MainActor (AppModel, ModelContext) throws -> Void)? = nil) throws {
         store = InMemoryTokenStore(session)
         defaults = UserDefaults(suiteName: "AppModelTests-\(UUID().uuidString)")!
@@ -174,7 +187,8 @@ final class AppFixture {
             wipeStore: { [unowned self] context in
                 if let wipe { try wipe(self.model, context) } else { try AppModel.deleteAllRecords(in: context) }
             },
-            logoutSyncTimeout: logoutSyncTimeout)
+            logoutSyncTimeout: logoutSyncTimeout,
+            logoutRevokeTimeout: logoutRevokeTimeout)
         model = AppModel(container: container, auth: auth, defaults: defaults, dependencies: deps)
     }
 

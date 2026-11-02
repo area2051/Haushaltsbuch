@@ -606,3 +606,32 @@ private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
     #expect(f.cursor.lastVersion == 7)
     #expect(try f.all(TransactionEntity.self).isEmpty)
 }
+
+// MARK: Abmelden während eines laufenden Syncs (Final-Review Finding 2)
+
+@MainActor @Test func responseArrivingAfterInvalidateIsNotApplied() async throws {
+    let f = try SyncFixture(lastVersion: 3)
+    let latch = Latch()
+    let server = f.server
+    server.extra.categories = [.init(archived: false, color: "#112233", deleted: false, icon: "cart",
+                                     id: UUID().uuidString.lowercased(), kind: .expense, name: "Fremd",
+                                     sortOrder: 0, version: 9)]
+    f.transport.handle { req in
+        try await latch.wait()
+        return server.handle(req)
+    }
+
+    let task = Task { await f.engine.syncNow() }
+    await waitUntil { latch.arrivals == 1 }
+    f.engine.invalidate()
+    latch.open()
+    await task.value
+
+    #expect(try f.all(CategoryEntity.self).isEmpty)
+    #expect(f.cursor.lastVersion == 3)
+    #expect(f.engine.lastPass?.result == .cancelled)
+
+    // Danach startet die Engine keinen Durchlauf mehr.
+    await f.engine.syncNow()
+    #expect(f.transport.requests.count == 1)
+}

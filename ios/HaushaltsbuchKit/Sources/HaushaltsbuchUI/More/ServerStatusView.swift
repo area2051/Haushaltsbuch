@@ -20,7 +20,7 @@ struct ServerStatusView: View {
                 }
             }
             if let engine = app.engine {
-                SyncSection(engine: engine)
+                SyncSection(engine: engine) { await app.pullToRefresh() }
             }
         }
         .navigationTitle("Server & Sync")
@@ -34,6 +34,8 @@ struct ServerStatusView: View {
 
 private struct SyncSection: View {
     @ObservedObject var engine: SyncEngine
+    /// Über den Scheduler (Backoff-Auswertung, endet mit dem Abmelden).
+    let syncNow: () async -> Void
 
     var body: some View {
         Section("Synchronisation") {
@@ -42,7 +44,7 @@ private struct SyncSection: View {
             LabeledContent("Ausstehend", value: ServerStatusText.pending(engine.pendingCount))
                 .accessibilityIdentifier("server.pending")
             Button {
-                Task { await engine.syncNow() }
+                Task { await syncNow() }
             } label: {
                 Label("Jetzt synchronisieren", systemImage: "arrow.triangle.2.circlepath")
             }
