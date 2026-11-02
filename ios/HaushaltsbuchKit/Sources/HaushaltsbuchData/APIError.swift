@@ -12,6 +12,8 @@ public enum APIError: Error, Equatable, Sendable {
     case unauthorized
     /// Alles andere (unerwarteter Status, Dekodierfehler …).
     case unexpected(String)
+    /// Vom Aufrufer abgebrochen (Task-Abbruch, `URLError.cancelled`) – kein Fehler für die Oberfläche.
+    case cancelled
 
     static let unreachableCodes: Set<URLError.Code> = [
         .cannotConnectToHost, .cannotFindHost, .timedOut,
@@ -26,6 +28,10 @@ public enum APIError: Error, Equatable, Sendable {
             self = e
         case let e as ClientError:
             self = APIError(e.underlyingError)
+        case is CancellationError:
+            self = .cancelled
+        case let e as URLError where e.code == .cancelled:
+            self = .cancelled
         case let e as URLError where Self.unreachableCodes.contains(e.code):
             self = .unreachable
         default:
@@ -47,6 +53,8 @@ public enum APIError: Error, Equatable, Sendable {
             return "Server nicht erreichbar. Bist du im Heimnetz oder per VPN verbunden?"
         case .unauthorized:
             return "Sitzung abgelaufen – bitte erneut anmelden."
+        case .cancelled:
+            return "Abgebrochen."
         case .unexpected:
             return "Unerwarteter Fehler bei der Kommunikation mit dem Server."
         case let .server(code, message):
