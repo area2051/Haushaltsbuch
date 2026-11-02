@@ -54,8 +54,8 @@ private struct QuickEntryContent: View {
 
     private var dayBinding: Binding<Date> {
         Binding(
-            get: { Self.date(for: model.day) },
-            set: { model.day = Self.day(for: $0) })
+            get: { CalendarDay.pickerDate(model.day) },
+            set: { model.day = CalendarDay.from(pickerDate: $0) })
     }
 
     var body: some View {
@@ -128,20 +128,5 @@ private struct QuickEntryContent: View {
             Text("Details").font(.headline)
         }
         .accessibilityIdentifier("quickEntry.details")
-    }
-
-    private static var calendar: Calendar {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = Calendar.current.timeZone
-        return cal
-    }
-
-    private static func date(for day: CalendarDay) -> Date {
-        calendar.date(from: DateComponents(year: day.year, month: day.month, day: day.day, hour: 12)) ?? Date()
-    }
-
-    private static func day(for date: Date) -> CalendarDay {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
-        return CalendarDay(year: c.year!, month: c.month!, day: c.day!)!
     }
 }

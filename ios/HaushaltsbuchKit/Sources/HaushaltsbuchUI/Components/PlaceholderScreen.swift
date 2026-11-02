@@ -43,6 +43,7 @@ struct SectionScreen: View {
     var body: some View {
         switch section {
         case .more: MorePlaceholder()
+        case .transactions: TransactionListView()
         default: PlaceholderScreen(title: section.title, systemImage: section.systemImage)
         }
     }

@@ -6,6 +6,9 @@ public struct AmountInput: Equatable, Sendable {
 
     public init() {}
 
+    /// Vorbelegung (z. B. beim Bearbeiten); wird auf 0…`maxCents` begrenzt.
+    public init(cents: Int) { self.cents = min(max(cents, 0), Self.maxCents) }
+
     public mutating func append(digit: Int) {
         guard (0...9).contains(digit) else { return }
         let next = cents * 10 + digit

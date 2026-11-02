@@ -5,6 +5,8 @@ import HaushaltsbuchCore
 struct CategoryGridView: View {
     let categories: [CategoryValue]
     let enabled: Bool
+    /// Hervorgehobene Kategorie (Bearbeiten-Formular).
+    var selectedId: UUID?
     let onSelect: (CategoryValue) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 72), spacing: 12, alignment: .top)]
@@ -21,6 +23,8 @@ struct CategoryGridView: View {
                             .foregroundStyle(.white)
                             .frame(width: 48, height: 48)
                             .background(Circle().fill(Color(hex: category.color)))
+                            .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: category.id == selectedId ? 3 : 0)
+                                .padding(-4))
                         Text(category.name)
                             .font(.caption)
                             .lineLimit(2)
@@ -32,6 +36,7 @@ struct CategoryGridView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(category.name)
+                .accessibilityAddTraits(category.id == selectedId ? .isSelected : [])
                 .accessibilityIdentifier("quickEntry.category.\(category.name)")
             }
         }
