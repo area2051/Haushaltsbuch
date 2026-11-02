@@ -72,9 +72,10 @@ private struct QuickEntryFixture {
     m.amount.append(digit: 7)
     m.note = "  \n "
     try m.save(category: f.food.id)
-    m.amount.append(digit: 8)
-    m.note = " Wocheneinkauf "
-    try m.save(category: f.food.id)
+    let m2 = f.model()
+    m2.amount.append(digit: 8)
+    m2.note = " Wocheneinkauf "
+    try m2.save(category: f.food.id)
     let notes = f.repository.activeTransactions().map(\.note)
     #expect(notes.contains(nil))
     #expect(notes.contains("Wocheneinkauf"))
@@ -86,4 +87,36 @@ private struct QuickEntryFixture {
     try f.repository.addTransaction(amountCents: 500, kind: .expense, categoryId: f.rent.id,
                                     day: QuickEntryFixture.today, paidBy: QuickEntryFixture.me, note: nil)
     #expect(f.model().categories.map(\.name) == ["Wohnen", "Lebensmittel"])
+}
+
+@MainActor @Test func secondSaveIsNoOp() throws {
+    let f = try QuickEntryFixture()
+    let m = f.model()
+    m.amount.append(digit: 9)
+    try m.save(category: f.food.id)
+    try m.save(category: f.rent.id)
+    #expect(f.repository.activeTransactions().count == 1)
+    #expect(!m.canSave)
+}
+
+@MainActor @Test func payerOptionsAlwaysContainCurrentUser() throws {
+    let f = try QuickEntryFixture()
+    let m = f.model()
+    #expect(m.members.isEmpty)
+    #expect(m.payerOptions.map(\.id) == [QuickEntryFixture.me])
+    #expect(m.payerOptions.first?.name == "Ich")
+    let other = UUID()
+    f.container.mainContext.insert(MemberEntity(id: QuickEntryFixture.me, username: "a", displayName: "Anna", isAdmin: true))
+    f.container.mainContext.insert(MemberEntity(id: other, username: "b", displayName: "Bert", isAdmin: false))
+    try f.container.mainContext.save()
+    let m2 = f.model()
+    #expect(m2.payerOptions.map(\.name) == ["Anna", "Bert"])
+}
+
+@MainActor @Test func switchingKindKeepsAmount() throws {
+    let f = try QuickEntryFixture()
+    let m = f.model()
+    m.amount.append(digit: 4)
+    m.kind = .income
+    #expect(m.amount.cents == 4)
 }

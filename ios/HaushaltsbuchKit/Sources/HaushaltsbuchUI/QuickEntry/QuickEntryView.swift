@@ -1,9 +1,12 @@
+import os
 import SwiftUI
 import UIKit
 import HaushaltsbuchCore
 import HaushaltsbuchData
 
 /// Schnellerfassung als Sheet: Betrag tippen, Kategorie tippen, fertig.
+private let logger = Logger(subsystem: "de.haushaltsbuch.app", category: "quickEntry")
+
 struct QuickEntryView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -14,6 +17,9 @@ struct QuickEntryView: View {
             Group {
                 if let model {
                     QuickEntryContent(model: model, onSaved: finish)
+                } else if app.currentUserId == nil {
+                    ContentUnavailableView("Benutzer unbekannt – bitte neu anmelden.",
+                                           systemImage: "person.crop.circle.badge.exclamationmark")
                 } else {
                     ProgressView()
                 }
@@ -68,10 +74,12 @@ private struct QuickEntryContent: View {
                 KeypadView(amount: $model.amount)
 
                 CategoryGridView(categories: model.categories, enabled: model.canSave) { category in
+                    errorMessage = nil
                     do {
                         try model.save(category: category.id)
                         onSaved()
                     } catch {
+                        logger.error("Speichern fehlgeschlagen: \(String(describing: error), privacy: .public)")
                         errorMessage = "Die Buchung konnte nicht gespeichert werden."
                     }
                 }
@@ -105,8 +113,8 @@ private struct QuickEntryContent: View {
                     Text("Bezahlt von")
                     Spacer()
                     Picker("Bezahlt von", selection: $model.paidBy) {
-                        ForEach(model.members, id: \.id) { member in
-                            Text(member.displayName).tag(member.id)
+                        ForEach(model.payerOptions, id: \.id) { option in
+                            Text(option.name).tag(option.id)
                         }
                     }
                     .labelsHidden()
