@@ -37,3 +37,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: de.haushaltsbuch.app
         INFOPLIST_FILE: Haushaltsbuch/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme:
+      testTargets:
+        - HaushaltsbuchAppUITests
+  # Oberflächentests (XCUITest) für die Live-Prüfung gegen einen laufenden Server; nicht Teil von test.sh.
+  HaushaltsbuchAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - HaushaltsbuchAppUITests
+    dependencies:
+      - target: Haushaltsbuch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.haushaltsbuch.app.uitests
+        GENERATE_INFOPLIST_FILE: YES

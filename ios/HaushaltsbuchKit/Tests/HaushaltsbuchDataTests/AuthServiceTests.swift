@@ -112,6 +112,30 @@ private struct ServiceFixture {
     #expect(f.auth.loginWouldSwitchUser("bert") == true)
 }
 
+@MainActor @Test func lastUsernameIsRememberedAfterLogout() async throws {
+    let f = ServiceFixture()
+    #expect(f.auth.lastUsername == nil)
+    try await f.loggedIn()
+    f.transport.enqueue("logout", .empty(204))
+    await f.auth.logout()
+    #expect(f.auth.lastUsername == "anna")
+}
+
+@MainActor @Test func forgetServerReturnsToServerInput() async throws {
+    let f = ServiceFixture()
+    try await f.connectToLogin()
+    f.auth.forgetServer()
+    #expect(f.auth.state == .needsServer)
+    #expect(f.defaults.url(forKey: AuthService.lastServerURLKey) == nil)
+}
+
+@MainActor @Test func forgetServerIgnoredWhileLoggedIn() async throws {
+    let f = ServiceFixture()
+    try await f.loggedIn()
+    f.auth.forgetServer()
+    #expect(f.auth.state == .loggedIn(Fixtures.session()))
+}
+
 @MainActor @Test func firstLoginNeverCountsAsSwitch() {
     let f = ServiceFixture()
     #expect(f.auth.loginWouldSwitchUser("anna") == false)

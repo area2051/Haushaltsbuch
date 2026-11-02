@@ -72,6 +72,16 @@ public final class AuthService {
         }
     }
 
+    /// Zurück zur Server-Eingabe („Anderen Server wählen“). Nur ohne aktive Sitzung; die
+    /// gemerkte Adresse wird vergessen.
+    public func forgetServer() {
+        guard case .loggedIn = state else {
+            defaults.removeObject(forKey: Self.lastServerURLKey)
+            state = .needsServer
+            return
+        }
+    }
+
     // MARK: Einrichtung
 
     /// `POST /setup` (erstes Admin-Konto), danach automatisch anmelden.
@@ -144,6 +154,11 @@ public final class AuthService {
         defaults.set(response.user.username, forKey: Self.lastUsernameKey)
         activate(session)
         state = .loggedIn(session)
+    }
+
+    /// Zuletzt angemeldeter Benutzer (zum Vorausfüllen der Anmeldung); `nil` vor der ersten Anmeldung.
+    public var lastUsername: String? {
+        defaults.string(forKey: Self.lastUsernameKey)
     }
 
     /// `true`, wenn sich zuvor schon ein *anderer* Benutzer auf diesem Gerät angemeldet hat

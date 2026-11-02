@@ -37,7 +37,7 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ]
         ),
-        .target(name: "HaushaltsbuchUI", dependencies: ["HaushaltsbuchData", "HaushaltsbuchCore"]),
+        .target(name: "HaushaltsbuchUI", dependencies: ["HaushaltsbuchData", "HaushaltsbuchCore", "HaushaltsbuchAPI"]),
         .testTarget(name: "HaushaltsbuchAPITests", dependencies: ["HaushaltsbuchAPI"]),
         .testTarget(name: "HaushaltsbuchCoreTests", dependencies: ["HaushaltsbuchCore"]),
         .testTarget(
@@ -49,7 +49,17 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ]
         ),
-        .testTarget(name: "HaushaltsbuchUITests", dependencies: ["HaushaltsbuchUI"]),
+        .testTarget(
+            name: "HaushaltsbuchUITests",
+            dependencies: [
+                "HaushaltsbuchUI",
+                "HaushaltsbuchData",
+                "HaushaltsbuchAPI",
+                "HaushaltsbuchCore",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
