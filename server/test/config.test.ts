@@ -13,11 +13,17 @@ test('rejects invalid PORT', () => {
 })
 test('applies defaults', () => {
   const c = loadConfig({ DATABASE_URL: 'postgres://x', JWT_SECRET: 'x'.repeat(32) })
-  expect(c).toMatchObject({ port: 3000, timeZone: 'Europe/Berlin' })
+  expect(c).toMatchObject({ port: 3000, timeZone: 'Europe/Berlin', webDir: 'web-dist' })
 })
 test('reads explicit values', () => {
-  const c = loadConfig({ DATABASE_URL: 'postgres://x', JWT_SECRET: 'y'.repeat(40), PORT: '8080', TZ: 'UTC' })
-  expect(c).toEqual({ databaseUrl: 'postgres://x', jwtSecret: 'y'.repeat(40), port: 8080, timeZone: 'UTC' })
+  const c = loadConfig({ DATABASE_URL: 'postgres://x', JWT_SECRET: 'y'.repeat(40), PORT: '8080', TZ: 'UTC', WEB_DIR: '/srv/web' })
+  expect(c).toEqual({
+    databaseUrl: 'postgres://x',
+    jwtSecret: 'y'.repeat(40),
+    port: 8080,
+    timeZone: 'UTC',
+    webDir: '/srv/web',
+  })
 })
 test('todayIn uses the given time zone', () => {
   const clock = { now: () => new Date('2026-01-31T23:30:00Z') }

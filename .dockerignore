@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/coverage
+**/.env
+.env
+.git
+ios
+data
+backups
+docs
+server/test
+web/src/**/*.test.ts
+web/src/**/*.test.tsx

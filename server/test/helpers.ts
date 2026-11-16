@@ -24,7 +24,7 @@ export class MutableClock implements Clock {
 }
 
 export async function createTestApp(
-  opts: { now?: string; onRulesChanged?: () => Promise<void> } = {},
+  opts: { now?: string; onRulesChanged?: () => Promise<void>; webDir?: string } = {},
 ): Promise<{
   app: FastifyInstance
   db: Db
@@ -45,6 +45,7 @@ export async function createTestApp(
       jwtSecret: 'test-secret-test-secret-test-secret-123',
       port: 3000,
       timeZone: 'Europe/Berlin',
+      webDir: opts.webDir,
     }
     const app = await buildApp({ config, db, clock, onRulesChanged: opts.onRulesChanged })
     return {

@@ -18,6 +18,7 @@ import { generateDueTransactions } from './recurring/generator.js'
 import { setupRoutes } from './setup/routes.js'
 import { syncRoutes } from './sync/routes.js'
 import { userRoutes } from './users/routes.js'
+import { hasWebApp, webRoutes } from './web/routes.js'
 
 export type AppDeps = {
   config: Config
@@ -64,6 +65,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       deps.onRulesChanged ??
       (() => generateDueTransactions(deps.db, todayIn(clock, deps.config.timeZone)).then(() => {})),
   })
+  if (hasWebApp(deps.config.webDir)) {
+    await app.register(webRoutes, { root: deps.config.webDir })
+  }
 
   return app
 }
