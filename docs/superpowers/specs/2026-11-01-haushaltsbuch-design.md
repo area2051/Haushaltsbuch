@@ -25,7 +25,8 @@ Native Apple-App (iPhone + iPad) als Haushaltsbuch für **einen** Haushalt mit m
 - Mehrere Haushalte pro Server, mehrere Währungen
 - Widget, Siri-Kurzbefehl (Architektur soll es nicht verbauen)
 - Belege/Fotos, Bankanbindung, Push-Benachrichtigungen
-- Web-Oberfläche
+
+**Nachtrag 2026-11-16:** Eine Web-App ist hinzugekommen (Abschnitt 11).
 
 ## 2. Architektur
 
@@ -205,3 +206,12 @@ Swift Charts; Formatierung nach Locale `de_DE`; Dark Mode; Dynamic Type; VoiceOv
 - Lokale Entwicklung: dieselbe Compose-Datei auf dem Mac.
 - App-Installation: zunächst über Xcode mit kostenlosem Apple-Account (Profil läuft nach 7 Tagen ab, dann neu installieren). Später optional Apple Developer Program (Installation 1 Jahr gültig, TestFlight).
 - Repository liegt in OneDrive: `server/node_modules` als „Immer auf diesem Gerät behalten“ markieren; `.gitignore` für `node_modules`, Build-Ordner, `.env`.
+
+## 11. Web-App (Nachtrag 2026-11-16)
+
+- `web/`: React + Vite + TypeScript, mobile-first mit Desktop-Ansicht (mehr Diagramme). Stil „Soft bento“.
+- Wird vom `api`-Container unter `/app/` ausgeliefert (gleiche Origin, kein CORS). Der Server registriert die Routen nur, wenn `WEB_DIR` (Standard `web-dist`) eine `index.html` enthält; sie erscheinen nicht in `openapi.json`.
+- Online-only: Daten liegen nur im Speicher, gelesen und geschrieben wird über `POST /sync` (gleiches Protokoll wie iOS, Abschnitt 4). Änderungen erscheinen sofort und werden zurückgenommen, wenn der Server sie ablehnt oder nicht erreichbar ist.
+- Auth: Access-Token nur im Speicher, Refresh-Token in `localStorage`; strikte CSP auf der HTML-Antwort.
+- Funktionsumfang wie iOS (Übersicht, Buchungen, Schnellerfassung, Budgets, Kategorien, wiederkehrende Buchungen, CSV-Export, Profil, Mitglieder). Kein Face-ID-Gegenstück.
+- Details: `docs/web.md`.
