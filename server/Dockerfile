@@ -24,6 +24,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server/drizzle ./drizzle
 COPY --from=web /web/dist ./web-dist
+# Files copied from the host keep the host's mode bits. NAS shares (e.g. UGOS/Synology) grant
+# access through ACLs, which COPY drops, so the files can end up unreadable for `node`.
+# Make everything the app reads world-readable (directories traversable) before switching user.
+RUN chmod -R a+rX package.json package-lock.json drizzle web-dist
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

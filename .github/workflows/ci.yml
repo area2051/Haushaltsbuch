@@ -59,4 +59,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # Simulate a NAS share whose ACLs don't survive COPY: strip group/other permissions
+      # so the image must make its runtime files readable itself.
+      - run: chmod -R go-rwx server web
       - run: docker build -f server/Dockerfile -t haushaltsbuch-api:ci .
+      - name: Runtime files are readable for the node user
+        run: docker run --rm -v "$PWD/.github/scripts/check-image-files.sh:/check.sh:ro" --entrypoint sh haushaltsbuch-api:ci /check.sh
