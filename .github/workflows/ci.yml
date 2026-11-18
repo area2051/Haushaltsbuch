@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server (typecheck + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      # Integration tests start Postgres via Testcontainers (Docker is available on ubuntu runners).
+      # Includes the check that openapi.json is up to date.
+      - run: npm test
+
+  web:
+    name: Web (typecheck + tests + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      # Includes the check that src/api/schema.d.ts matches server/openapi.json.
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # Simulate a NAS share whose ACLs don't survive COPY: strip group/other permissions
+      # so the image must make its runtime files readable itself.
+      - run: chmod -R go-rwx server web
+      - run: docker build -f server/Dockerfile -t haushaltsbuch-api:ci .
+      - name: Runtime files are readable for the node user
+        run: docker run --rm -v "$PWD/.github/scripts/check-image-files.sh:/check.sh:ro" --entrypoint sh haushaltsbuch-api:ci /check.sh

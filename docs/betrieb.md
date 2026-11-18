@@ -1,6 +1,6 @@
 # Betrieb
 
-Der Server läuft per Docker Compose mit drei Containern: `postgres`, `api` und `backup`.
+Der Server läuft per Docker Compose mit drei Containern: `postgres`, `api` und `backup`. Der `api`-Container liefert zusätzlich die Web-App unter `http://<nas-ip>:3000/app/` aus (siehe [web.md](web.md)).
 
 **Sicherheit:** Die API ist nur im LAN oder per VPN erreichbar. Port 3000 niemals im Router freigeben (kein Port-Forwarding).
 
@@ -21,7 +21,7 @@ Ist Port 3000 belegt, in `.env` `API_PORT=3001` setzen. Daten liegen in `${DATA_
 
 ## Erster Setup-Aufruf
 
-Einmalig den Admin-Benutzer anlegen (danach liefert `/health` `setupRequired:false`):
+Einmalig den Admin-Benutzer anlegen (danach liefert `/health` `setupRequired:false`). Am einfachsten im Browser unter `http://<nas-ip>:3000/app/` – die Web-App zeigt beim ersten Aufruf die Einrichtung. Alternativ per curl:
 
 ```bash
 curl -s -XPOST http://<nas-ip>:3000/setup -H 'content-type: application/json' \
@@ -33,14 +33,14 @@ curl -s -XPOST http://<nas-ip>:3000/setup -H 'content-type: application/json' \
 Das Image läuft auf `node:22-slim` (Debian/glibc, wegen `@node-rs/argon2`). Für NAS (amd64) und Apple Silicon (arm64):
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/haushaltsbuch-api:latest --push server
+docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t <registry>/haushaltsbuch-api:latest --push .
 ```
 
-Wird kein Registry-Image genutzt, baut die UGOS-Maschine selbst (`build: ./server` in der Compose-Datei).
+Der Build-Kontext ist das Repo-Wurzelverzeichnis, weil das Image auch die Web-App (`web/`) baut. Wird kein Registry-Image genutzt, baut die UGOS-Maschine selbst (`build: { context: ., dockerfile: server/Dockerfile }` in der Compose-Datei).
 
 ## Deployment auf dem UGREEN NAS (UGOS Pro)
 
-1. Projektordner (`docker-compose.yml`, `server/`, `ops/`, `.env`) auf das NAS kopieren, z. B. nach `/volume1/docker/haushaltsbuch`.
+1. Projektordner (`docker-compose.yml`, `.dockerignore`, `server/`, `web/`, `ops/`, `.env`) auf das NAS kopieren, z. B. nach `/volume1/docker/haushaltsbuch`.
 2. In der UGOS-Pro-Docker-App unter *Projekt* ein neues Projekt anlegen, den Ordner als Pfad wählen und die `docker-compose.yml` verwenden.
 3. `.env` im Projektordner mit eigenen Werten befüllen (`POSTGRES_PASSWORD`, `JWT_SECRET`, `TZ`).
 4. Projekt starten; alle drei Container sollten laufen, `api` und `postgres` als `healthy`.

@@ -15,6 +15,7 @@
     "openapi": "tsx src/openapi/generate.ts"
   },
   "dependencies": {
+    "@fastify/static": "^8.3.0",
     "@fastify/swagger": "^9.9.3",
     "@node-rs/argon2": "^2.2.2",
     "croner": "^11.0.0",

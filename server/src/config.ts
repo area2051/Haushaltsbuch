@@ -3,6 +3,8 @@ export type Config = {
   jwtSecret: string
   port: number
   timeZone: string
+  /** Directory with the built web app; served under /app/ when it contains an index.html. */
+  webDir?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
@@ -18,5 +20,11 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     throw new Error('PORT must be an integer between 1 and 65535')
   }
 
-  return { databaseUrl, jwtSecret, port, timeZone: env.TZ || 'Europe/Berlin' }
+  return {
+    databaseUrl,
+    jwtSecret,
+    port,
+    timeZone: env.TZ || 'Europe/Berlin',
+    webDir: env.WEB_DIR || 'web-dist',
+  }
 }
