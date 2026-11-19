@@ -10,11 +10,13 @@ import { Segmented } from '../../components/ui/Segmented'
 import { Sheet } from '../../components/ui/Sheet'
 import { rankCategories } from '../../domain/analytics'
 import { appendDigit, deleteLast } from '../../domain/amountInput'
-import { today } from '../../domain/dates'
+import { germanDate, today } from '../../domain/dates'
 import { formatMoney } from '../../domain/money'
 import type { Kind, Transaction, TransactionInput } from '../../domain/types'
 import { cn } from '../../lib/cn'
 import { uuidv4 } from '../../lib/uuid'
+import { type Rhythm, RhythmPicker } from '../more/RhythmPicker'
+import { rhythmLabel, type RuleDraft, ruleProblem, toRule } from '../more/rules'
 import { type Draft, draftProblem, toTransaction } from './draft'
 
 type Ctx = { openNew(): void; openEdit(tx: Transaction): void }
@@ -62,6 +64,18 @@ export function EntryProvider({ children }: { children: ReactNode }) {
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'del'] as const
 
+/** Rule built from the entry form („Wiederholen“): starts on the chosen date, no end. */
+const ruleDraftFor = (d: Draft, r: Rhythm): RuleDraft => ({
+  cents: d.cents,
+  kind: d.kind,
+  categoryId: d.categoryId,
+  paidBy: d.paidBy,
+  note: d.note,
+  ...r,
+  startDate: d.date,
+  endDate: '',
+})
+
 function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone(): void }) {
   const saveRecord = useSaver()
   const me = useMe()
@@ -72,6 +86,8 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
       : { cents: 0, kind: 'expense', categoryId: '', date: today(), paidBy: me.id, note: '' },
   )
   const [details, setDetails] = useState(!!editing)
+  /** New entries only: when set, saving creates a recurring rule starting at the chosen date. */
+  const [repeat, setRepeat] = useState<Rhythm | null>(null)
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }))
 
   const transactions = useMemo(() => [...data.transactions.values()], [data.transactions])
@@ -114,7 +130,19 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
     const d = { ...draft, categoryId }
     if (draftProblem(d)) return
     if (editing) void persist(toTransaction(d, editing.id, editing.recurringRuleId), 'Gespeichert')
+    else if (repeat) saveRule(d, repeat)
     else void persist(toTransaction(d, uuidv4()), 'Gebucht')
+  }
+
+  /** The server books the first occurrence itself (at once if the date is today or earlier). */
+  function saveRule(d: Draft, r: Rhythm) {
+    const ruleDraft = ruleDraftFor(d, r)
+    if (ruleProblem(ruleDraft)) return
+    onDone()
+    void saveRecord('recurringRules', toRule(ruleDraft, uuidv4()), {
+      message: 'Wiederkehrend angelegt',
+      description: `${rhythmLabel(r.frequency, r.interval)} · erste Buchung am ${germanDate(d.date)}`,
+    })
   }
 
   function remove() {
@@ -126,6 +154,7 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
 
   const problem = draftProblem(draft)
   const offline = !data.online
+  const repeatInvalid = repeat !== null && ruleProblem(ruleDraftFor(draft, repeat)) !== null
   const amountReady = draft.cents > 0 && !offline
 
   return (
@@ -192,7 +221,13 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
       </section>
 
       {!editing && (
-        <button type="button" onClick={() => setDetails((v) => !v)} className="flex w-full items-center justify-between rounded-2xl bg-tile px-4 py-3 text-[15px] font-medium shadow-tile">
+        <button
+          type="button"
+          onClick={() => {
+            // A hidden repeat setting would turn the next category tap into a rule unnoticed.
+            if (details) setRepeat(null)
+            setDetails(!details)
+          }} className="flex w-full items-center justify-between rounded-2xl bg-tile px-4 py-3 text-[15px] font-medium shadow-tile">
           Details
           <ChevronDown className={cn('size-5 text-ink-3 transition-transform', details && 'rotate-180')} />
         </button>
@@ -201,6 +236,11 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
         {details && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="grid gap-4 pt-1 sm:grid-cols-2">
+              {!editing && (
+                <div className="sm:col-span-2">
+                  <RhythmPicker value={repeat} onChange={setRepeat} allowNone />
+                </div>
+              )}
               <Field label="Datum" error={problem === 'date' ? 'Ungültiges Datum' : null}>
                 {(id) => <Input id={id} type="date" value={draft.date} onChange={(e) => set({ date: e.target.value })} />}
               </Field>
@@ -222,7 +262,7 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
                 </Field>
               </div>
             </div>
-            <Button variant="primary" size="lg" className="mt-5 w-full" disabled={!!problem || offline} onClick={() => save()}>
+            <Button variant="primary" size="lg" className="mt-5 w-full" disabled={!!problem || offline || repeatInvalid} onClick={() => save()}>
               Speichern
             </Button>
             {editing && (

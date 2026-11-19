@@ -55,6 +55,7 @@ private let syncResponseJSON = """
         "note": null,
         "paidBy": "a3bb189e-8bf9-3888-9912-ace4e6543002",
         "frequency": "monthly",
+        "interval": 3,
         "startDate": "2026-01-01",
         "endDate": null,
         "nextDueDate": "2026-11-01"
@@ -116,7 +117,7 @@ private func isMissingOrNull(_ object: [String: Any], _ key: String) -> Bool {
     let rule = try #require(response.changes.recurringRules.first)
     #expect(rule.note == nil)
     #expect(rule.endDate == nil)
-    #expect(rule.frequency == .monthly)
+    #expect(rule.frequency == .monthly && rule.interval == 3)
     #expect(rule.nextDueDate == "2026-11-01")
 
     #expect(response.changes.categories.first?.kind == .expense)

@@ -115,14 +115,6 @@ enum CategoryForm {
 // MARK: Wiederkehrende
 
 enum RuleFormat {
-    static func frequency(_ f: Frequency) -> String {
-        switch f {
-        case .weekly: "wöchentlich"
-        case .monthly: "monatlich"
-        case .yearly: "jährlich"
-        }
-    }
-
     static func date(_ d: CalendarDay) -> String {
         String(format: "%02d.%02d.%04d", d.day, d.month, d.year)
     }

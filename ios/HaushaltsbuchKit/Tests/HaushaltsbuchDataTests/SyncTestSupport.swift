@@ -70,7 +70,7 @@ final class ServerSim {
             currentVersion += 1
             out.recurringRules.append(.init(amountCents: r.amountCents, categoryId: r.categoryId, deleted: r.deleted,
                                             endDate: r.endDate, frequency: .init(rawValue: r.frequency.rawValue)!,
-                                            id: r.id, kind: .init(rawValue: r.kind.rawValue)!,
+                                            id: r.id, interval: r.interval ?? 1, kind: .init(rawValue: r.kind.rawValue)!,
                                             nextDueDate: r.startDate, note: r.note, paidBy: r.paidBy,
                                             startDate: r.startDate, version: currentVersion))
         }

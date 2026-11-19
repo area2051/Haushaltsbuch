@@ -15,6 +15,13 @@
       "when": 1793546573758,
       "tag": "0001_useful_blackheart",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795126001053,
+      "tag": "0002_omniscient_thunderbolts",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,2 @@
+ALTER TABLE "recurring_rules" ADD COLUMN "interval_count" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "recurring_rules" ADD CONSTRAINT "recurring_rules_interval_range" CHECK ("recurring_rules"."interval_count" BETWEEN 1 AND 24);

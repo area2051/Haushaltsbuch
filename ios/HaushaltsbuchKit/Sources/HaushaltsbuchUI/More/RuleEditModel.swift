@@ -14,7 +14,7 @@ final class RuleEditModel {
     var categoryId: UUID?
     var note: String
     var paidBy: UUID?
-    var frequency: Frequency
+    var rhythm: Rhythm
     var startDate: CalendarDay
     var hasEndDate: Bool
     var endDate: CalendarDay
@@ -41,7 +41,7 @@ final class RuleEditModel {
             categoryId = rule.categoryId
             note = rule.note ?? ""
             paidBy = rule.paidBy
-            frequency = rule.frequencyValue
+            rhythm = rule.rhythm
             startDate = rule.startDay
             hasEndDate = rule.endDay != nil
             endDate = rule.endDay ?? rule.startDay
@@ -51,7 +51,7 @@ final class RuleEditModel {
             categoryId = nil
             note = ""
             paidBy = currentUserId
-            frequency = .monthly
+            rhythm = Rhythm(frequency: .monthly, interval: 1)
             startDate = today
             hasEndDate = false
             endDate = today
@@ -80,7 +80,8 @@ final class RuleEditModel {
     private var draft: RuleDraft? {
         guard let categoryId, let paidBy else { return nil }
         return RuleDraft(id: rule?.id, amountCents: amount.cents, kind: kind, categoryId: categoryId,
-                         note: NoteLimit.normalized(note), paidBy: paidBy, frequency: frequency,
+                         note: NoteLimit.normalized(note), paidBy: paidBy, frequency: rhythm.frequency,
+                         interval: rhythm.interval,
                          startDate: startDate, endDate: hasEndDate ? endDate : nil)
     }
 

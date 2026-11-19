@@ -9,6 +9,7 @@ Die Web-App (`web/`) ist die Browser-Variante des Haushaltsbuchs: gleicher Serve
 - **Auf dem Handy als App:** In Safari *Teilen → Zum Home-Bildschirm*. Die Seite öffnet sich dann ohne Browserleiste.
 - **Ohne Verbindung zur NAS** zeigt die App einen Hinweis mit „Erneut verbinden“; Speichern ist dann gesperrt (keine Offline-Warteschlange, anders als iOS). Scheitert ein Speichern am Netz, bietet die Meldung „Erneut versuchen“ mit denselben Daten an.
 - **Tastenkürzel am Desktop:** `N` neue Buchung, Ziffern und ⌫ für den Betrag, ← / → wechseln den Monat, ⌘K / Strg+K öffnet Suche und Befehle (Seiten, Buchungen nach Notiz oder Kategorie).
+- **Wiederkehrende Abbuchungen** (Miete, Strom, Grundsteuer …): unter *Mehr → Wiederkehrende Buchungen* oder direkt in der Erfassung über *Details → Wiederholen*. Rhythmus per Auswahl: wöchentlich, alle 2 Wochen, monatlich, vierteljährlich, halbjährlich, jährlich oder „Alle N Monate“ (1–24).
 - **Löschen** von Mitgliedern, Regeln und Kategorien fragt vorher nach; gelöschte Buchungen lassen sich per „Rückgängig“ wiederherstellen.
 
 ## Technik

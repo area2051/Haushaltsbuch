@@ -79,11 +79,9 @@ private struct RuleForm: View {
                 }
 
                 VStack(spacing: 12) {
-                    Picker("Häufigkeit", selection: $model.frequency) {
-                        ForEach(Frequency.allCases, id: \.self) { Text(RuleFormat.frequency($0)).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("rule.frequency")
+                    RhythmPickerView(rhythm: Binding(get: { model.rhythm },
+                                                     set: { if let r = $0 { model.rhythm = r } }))
+                        .accessibilityIdentifier("rule.frequency")
                     DatePicker("Start", selection: dateBinding(\.startDate), displayedComponents: .date)
                     Toggle("Enddatum", isOn: $model.hasEndDate)
                     if model.hasEndDate {

@@ -4,7 +4,7 @@ import type { RecurringRule, Transaction } from '../../domain/types'
 import { categoryNameProblem, newCategory, removalPlan, reorder } from './categoryOps'
 
 const rule = (categoryId: string): RecurringRule => ({
-  id: 'r1', amountCents: 100, kind: 'expense', categoryId, note: null, paidBy: 'u1', frequency: 'monthly',
+  id: 'r1', amountCents: 100, kind: 'expense', categoryId, note: null, paidBy: 'u1', frequency: 'monthly', interval: 1,
   startDate: '2026-01-01', endDate: null, nextDueDate: '2026-12-01', deleted: false, version: 1,
 })
 const strip = <T extends { version: number }>({ version: _v, ...rest }: T) => rest

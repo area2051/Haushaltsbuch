@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test } from 'vitest'
 import { today } from '../../domain/dates'
@@ -95,4 +95,50 @@ test('while the server is known to be unreachable, categories cannot save', asyn
   await user.click(dialog.getByRole('button', { name: '5' }))
   expect(dialog.getByRole('button', { name: /Lebensmittel/ })).toBeDisabled()
   expect(dialog.getByText(/Keine Verbindung/)).toBeInTheDocument()
+})
+
+test('with "Wiederholen" set, saving creates a rule from the chosen date instead of a single booking', async () => {
+  const { user, dialog, sync, server } = await openEntry()
+  for (const k of ['8', '9', '0', '0']) await user.click(dialog.getByRole('button', { name: k }))
+  await user.click(dialog.getByRole('button', { name: 'Details' }))
+  await user.selectOptions(dialog.getByLabelText('Wiederholen'), 'Vierteljährlich')
+  await user.click(dialog.getByRole('button', { name: /Lebensmittel/ }))
+  await user.type(dialog.getByLabelText('Notiz'), 'Grundsteuer')
+  await user.click(dialog.getByRole('button', { name: 'Speichern' }))
+
+  await waitFor(() => expect(sync.requests.flatMap((r) => r.changes.recurringRules ?? [])).toHaveLength(1))
+  expect(sync.requests.flatMap((r) => r.changes.recurringRules ?? [])[0]).toMatchObject({
+    amountCents: 8900,
+    kind: 'expense',
+    categoryId: 'c-food',
+    note: 'Grundsteuer',
+    paidBy: server.user.id,
+    frequency: 'monthly',
+    interval: 3,
+    startDate: today(),
+    endDate: null,
+    deleted: false,
+  })
+  expect(pushed(sync)).toHaveLength(0)
+})
+
+test('collapsing Details clears "Wiederholen", so a category tap books once', async () => {
+  const { user, dialog, sync } = await openEntry()
+  await user.click(dialog.getByRole('button', { name: '5' }))
+  await user.click(dialog.getByRole('button', { name: 'Details' }))
+  await user.selectOptions(dialog.getByLabelText('Wiederholen'), 'Monatlich')
+  await user.click(dialog.getByRole('button', { name: 'Details' }))
+  await user.click(dialog.getByRole('button', { name: /Lebensmittel/ }))
+  await waitFor(() => expect(pushed(sync)).toHaveLength(1))
+  expect(sync.requests.flatMap((r) => r.changes.recurringRules ?? [])).toHaveLength(0)
+})
+
+test('an invalid repeat (date before 2000) disables Speichern instead of silently doing nothing', async () => {
+  const { user, dialog } = await openEntry()
+  await user.click(dialog.getByRole('button', { name: '5' }))
+  await user.click(dialog.getByRole('button', { name: 'Details' }))
+  await user.click(dialog.getByRole('button', { name: /Lebensmittel/ }))
+  await user.selectOptions(dialog.getByLabelText('Wiederholen'), 'Monatlich')
+  fireEvent.change(dialog.getByLabelText('Datum'), { target: { value: '1999-12-01' } })
+  expect(dialog.getByRole('button', { name: 'Speichern' })).toBeDisabled()
 })

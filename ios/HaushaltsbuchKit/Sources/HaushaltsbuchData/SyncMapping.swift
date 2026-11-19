@@ -182,6 +182,7 @@ extension RecurringRuleEntity: SyncEntity {
         note = r.note
         self.paidBy = paidBy
         frequency = r.frequency.rawValue
+        interval = r.interval
         startDate = r.startDate
         endDate = r.endDate
         nextDueDate = r.nextDueDate
@@ -192,7 +193,7 @@ extension RecurringRuleEntity: SyncEntity {
     /// `nextDueDate` setzt nur der Server und wird nicht gesendet.
     var syncRecord: Record {
         Record(amountCents: amountCents, categoryId: categoryId.wire, deleted: deleted, endDate: endDate,
-               frequency: Record.frequencyPayload(rawValue: frequency) ?? .monthly, id: id.wire,
+               frequency: Record.frequencyPayload(rawValue: frequency) ?? .monthly, id: id.wire, interval: interval,
                kind: Record.kindPayload(rawValue: kind) ?? .expense, note: note, paidBy: paidBy.wire,
                startDate: startDate)
     }

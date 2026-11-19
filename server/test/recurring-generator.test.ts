@@ -47,6 +47,15 @@ describe('generateDueTransactions', () => {
   const txnsOf = (ruleId: string) =>
     t.db.select().from(transactions).where(eq(transactions.recurringRuleId, ruleId)).orderBy(transactions.date)
 
+  test('a quarterly rule books every third month and advances by a quarter', async () => {
+    const ctx = await start()
+    const rule = await addRule(ctx, { startDate: '2026-02-15', interval: 3 })
+    await generateDueTransactions(t.db, '2026-11-20')
+    expect((await txnsOf(rule.id)).map((r) => r.date)).toEqual(['2026-02-15', '2026-05-15', '2026-08-15', '2026-11-15'])
+    const [after] = await t.db.select().from(recurringRules).where(eq(recurringRules.id, rule.id))
+    expect(after!.nextDueDate).toBe('2027-02-15')
+  })
+
   test('generates due transactions and advances nextDueDate', async () => {
     const ctx = await start()
     const rule = await addRule(ctx, { startDate: '2026-01-10' })

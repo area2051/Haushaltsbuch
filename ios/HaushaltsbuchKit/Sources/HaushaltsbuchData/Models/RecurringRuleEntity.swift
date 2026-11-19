@@ -25,6 +25,8 @@ public final class RecurringRuleEntity: SyncTracked {
     public var paidBy: UUID
     /// `Frequency.rawValue`
     public var frequency: String
+    /// Alle N Einheiten (1–24). Standardwert 1: bestehende Daten werden automatisch migriert.
+    public var interval: Int = 1
     /// `YYYY-MM-DD`
     public var startDate: String
     public var endDate: String?
@@ -32,7 +34,7 @@ public final class RecurringRuleEntity: SyncTracked {
     public var nextDueDate: String?
 
     public init(id: UUID = UUID(), amountCents: Int, kind: Kind, categoryId: UUID, note: String?,
-                paidBy: UUID, frequency: Frequency, startDate: CalendarDay, endDate: CalendarDay?,
+                paidBy: UUID, frequency: Frequency, interval: Int = 1, startDate: CalendarDay, endDate: CalendarDay?,
                 nextDueDate: CalendarDay? = nil, version: Int? = nil, deleted: Bool = false,
                 isDirty: Bool = false) {
         self.id = id
@@ -47,6 +49,7 @@ public final class RecurringRuleEntity: SyncTracked {
         self.note = note
         self.paidBy = paidBy
         self.frequency = frequency.rawValue
+        self.interval = interval
         self.startDate = startDate.string
         self.endDate = endDate?.string
         self.nextDueDate = nextDueDate?.string
@@ -54,13 +57,14 @@ public final class RecurringRuleEntity: SyncTracked {
 
     public var kindValue: Kind { Kind(rawValue: kind) ?? .expense }
     public var frequencyValue: Frequency { Frequency(rawValue: frequency) ?? .monthly }
+    public var rhythm: Rhythm { Rhythm(frequency: frequencyValue, interval: interval) }
     public var startDay: CalendarDay { CalendarDay(string: startDate) ?? CalendarDay(year: 2000, month: 1, day: 1)! }
     public var endDay: CalendarDay? { endDate.flatMap { CalendarDay(string: $0) } }
     public var nextDueDay: CalendarDay? { nextDueDate.flatMap { CalendarDay(string: $0) } }
 
     public var value: RuleValue {
         RuleValue(id: id, amountCents: amountCents, kind: kindValue, categoryId: categoryId, note: note,
-                  paidBy: paidBy, frequency: frequencyValue, startDate: startDay, endDate: endDay,
+                  paidBy: paidBy, frequency: frequencyValue, interval: interval, startDate: startDay, endDate: endDay,
                   nextDueDate: nextDueDay)
     }
 }
@@ -74,7 +78,10 @@ public struct RuleValue: Sendable, Equatable {
     public var note: String?
     public var paidBy: UUID
     public var frequency: Frequency
+    public var interval: Int
     public var startDate: CalendarDay
     public var endDate: CalendarDay?
     public var nextDueDate: CalendarDay?
+
+    public var rhythm: Rhythm { Rhythm(frequency: frequency, interval: interval) }
 }

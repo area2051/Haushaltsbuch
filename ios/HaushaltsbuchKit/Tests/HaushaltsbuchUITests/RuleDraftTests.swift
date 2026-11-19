@@ -57,7 +57,7 @@ private struct RuleFixture {
     let f = try RuleFixture()
     let m = f.model()
     #expect(m.startDate == CalendarDay(year: 2026, month: 11, day: 2)!)
-    #expect(m.frequency == .monthly)
+    #expect(m.rhythm == Rhythm(frequency: .monthly, interval: 1))
     #expect(m.paidBy == f.user)
     #expect(m.categoryId == f.category.id)   // erste aktive Kategorie der Art
     #expect(!m.canSave)                       // Betrag fehlt
@@ -76,7 +76,7 @@ private struct RuleFixture {
     let edit = f.model(rule: rule)
     #expect(edit.amount.cents == 85000)
     #expect(edit.note == "Miete")
-    edit.frequency = .yearly
+    edit.rhythm = Rhythm(frequency: .yearly, interval: 1)
     edit.note = ""
     try edit.save()
     #expect(try f.rules().count == 1)
@@ -91,4 +91,27 @@ private struct RuleFixture {
     m.kind = .income
     #expect(m.categoryId == income.id)
     #expect(m.categories.map(\.id) == [income.id])
+}
+
+@MainActor @Test func quarterlyRhythmIsSavedAsMonthlyTimesThree() throws {
+    let f = try RuleFixture()
+    let m = f.model()
+    #expect(m.rhythm == Rhythm(frequency: .monthly, interval: 1))
+    m.amount = AmountInput(cents: 12000)
+    m.categoryId = f.category.id
+    m.rhythm = Rhythm(frequency: .monthly, interval: 3)
+    try m.save()
+    let rule = try #require(try f.rules().first)
+    #expect(rule.frequency == "monthly" && rule.interval == 3)
+    #expect(f.model(rule: rule).rhythm == Rhythm(frequency: .monthly, interval: 3))
+}
+
+@MainActor @Test func intervalOutsideOneToTwentyFourIsRejected() throws {
+    let f = try RuleFixture()
+    let m = f.model()
+    m.amount = AmountInput(cents: 12000)
+    m.categoryId = f.category.id
+    m.rhythm = Rhythm(frequency: .monthly, interval: 25)
+    #expect(m.validationMessage == "Bitte als Intervall eine Zahl von 1 bis 24 wählen.")
+    #expect(!m.canSave)
 }
