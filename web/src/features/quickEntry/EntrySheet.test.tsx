@@ -96,3 +96,28 @@ test('while the server is known to be unreachable, categories cannot save', asyn
   expect(dialog.getByRole('button', { name: /Lebensmittel/ })).toBeDisabled()
   expect(dialog.getByText(/Keine Verbindung/)).toBeInTheDocument()
 })
+
+test('with "Wiederholen" set, saving creates a rule from the chosen date instead of a single booking', async () => {
+  const { user, dialog, sync, server } = await openEntry()
+  for (const k of ['8', '9', '0', '0']) await user.click(dialog.getByRole('button', { name: k }))
+  await user.click(dialog.getByRole('button', { name: 'Details' }))
+  await user.selectOptions(dialog.getByLabelText('Rhythmus'), 'Vierteljährlich')
+  await user.click(dialog.getByRole('button', { name: /Lebensmittel/ }))
+  await user.type(dialog.getByLabelText('Notiz'), 'Grundsteuer')
+  await user.click(dialog.getByRole('button', { name: 'Speichern' }))
+
+  await waitFor(() => expect(sync.requests.flatMap((r) => r.changes.recurringRules ?? [])).toHaveLength(1))
+  expect(sync.requests.flatMap((r) => r.changes.recurringRules ?? [])[0]).toMatchObject({
+    amountCents: 8900,
+    kind: 'expense',
+    categoryId: 'c-food',
+    note: 'Grundsteuer',
+    paidBy: server.user.id,
+    frequency: 'monthly',
+    interval: 3,
+    startDate: today(),
+    endDate: null,
+    deleted: false,
+  })
+  expect(pushed(sync)).toHaveLength(0)
+})

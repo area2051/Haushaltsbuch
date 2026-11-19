@@ -231,6 +231,7 @@ export interface components {
             frequency: "weekly" | "monthly" | "yearly";
             /** Format: uuid */
             id: string;
+            interval?: number;
             /** @enum {string} */
             kind: "income" | "expense";
             note: string | null;
@@ -248,6 +249,7 @@ export interface components {
             frequency: "weekly" | "monthly" | "yearly";
             /** Format: uuid */
             id: string;
+            interval: number;
             /** @enum {string} */
             kind: "income" | "expense";
             nextDueDate: string;

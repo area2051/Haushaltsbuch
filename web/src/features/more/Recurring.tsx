@@ -12,9 +12,10 @@ import { Sheet } from '../../components/ui/Sheet'
 import { Tile } from '../../components/ui/Tile'
 import { germanDate, today } from '../../domain/dates'
 import { centsToInput, formatSigned, parseMoney } from '../../domain/money'
-import type { Frequency, Kind, RecurringRule } from '../../domain/types'
+import type { Kind, RecurringRule } from '../../domain/types'
 import { uuidv4 } from '../../lib/uuid'
-import { type RuleDraft, ruleProblem, ruleSchedule, toRule } from './rules'
+import { RhythmPicker } from './RhythmPicker'
+import { MAX_INTERVAL, type RuleDraft, ruleProblem, ruleSchedule, toRule } from './rules'
 
 export function Recurring() {
   const data = useData()
@@ -49,7 +50,7 @@ export function Recurring() {
                   <CategoryIcon icon={c?.icon ?? ''} color={c?.color ?? '#999'} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-medium">{r.note || c?.name || 'Ohne Kategorie'}</span>
-                    <span className="block truncate text-[13px] text-ink-3">{ruleSchedule(r.frequency, r.startDate)}</span>
+                    <span className="block truncate text-[13px] text-ink-3">{ruleSchedule(r.frequency, r.interval, r.startDate)}</span>
                     <span className="block truncate text-[13px] text-ink-3">
                       {ended ? 'Beendet' : r.nextDueDate <= now ? 'Heute fällig' : `Nächste Buchung am ${germanDate(r.nextDueDate)}`}
                     </span>
@@ -86,6 +87,7 @@ function RuleForm({ target, onDone }: { target: RecurringRule | 'new'; onDone():
     paidBy: existing?.paidBy ?? me.id,
     note: existing?.note ?? '',
     frequency: existing?.frequency ?? 'monthly',
+    interval: existing?.interval ?? 1,
     startDate: existing?.startDate ?? today(),
     endDate: existing?.endDate ?? '',
   }))
@@ -138,18 +140,10 @@ function RuleForm({ target, onDone }: { target: RecurringRule | 'new'; onDone():
           )}
         </Field>
       </div>
-      <Segmented<Frequency>
-        label="Rhythmus"
-        value={d.frequency}
-        onChange={(frequency) => set({ frequency })}
-        options={[
-          { value: 'weekly', label: 'Wöchentlich' },
-          { value: 'monthly', label: 'Monatlich' },
-          { value: 'yearly', label: 'Jährlich' },
-        ]}
-      />
+      <RhythmPicker value={{ frequency: d.frequency, interval: d.interval }} onChange={(r) => r && set(r)} />
+      {problem === 'interval' && <p className="px-1 text-[13px] text-neg">Zahl von 1 bis {MAX_INTERVAL} eingeben</p>}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Start" error={problem === 'startDate' ? PROBLEM_TEXT.startDate : null} hint={problem !== 'startDate' ? ruleSchedule(d.frequency, d.startDate) : undefined}>
+        <Field label="Start" error={problem === 'startDate' ? PROBLEM_TEXT.startDate : null} hint={problem !== 'startDate' && problem !== 'interval' ? ruleSchedule(d.frequency, d.interval, d.startDate) : undefined}>
           {(id) => <Input id={id} type="date" value={d.startDate} onChange={(e) => set({ startDate: e.target.value })} />}
         </Field>
         <Field label="Ende (optional)" error={problem === 'endDate' ? PROBLEM_TEXT.endDate : null}>
