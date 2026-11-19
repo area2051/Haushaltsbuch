@@ -75,10 +75,13 @@ Tabellen:
 - **transactions** – `amount_cents` (Integer > 0), `kind`, `category_id`, `date` (Kalenderdatum `YYYY-MM-DD`, ohne Uhrzeit), `note` (optional), `paid_by` (user_id), `recurring_rule_id` (optional).
   - Eindeutigkeit `(recurring_rule_id, date)`, wenn `recurring_rule_id` gesetzt ist.
 - **budgets** – `category_id` (eindeutig unter nicht gelöschten), `monthly_limit_cents`.
-- **recurring_rules** – `amount_cents`, `kind`, `category_id`, `note`, `paid_by`, `frequency` (`weekly` | `monthly` | `yearly`), `start_date`, `end_date` (optional), `next_due_date`.
+- **recurring_rules** – `amount_cents`, `kind`, `category_id`, `note`, `paid_by`, `frequency` (`weekly` | `monthly` | `yearly`), `interval_count` (API-Feld `interval`, 1–24, Standard 1: alle N Wochen/Monate/Jahre – z. B. monatlich × 3 = vierteljährlich), `start_date`, `end_date` (optional), `next_due_date`.
   - `weekly`: gleicher Wochentag wie `start_date`.
   - `monthly`: gleicher Tag des Monats wie `start_date`; gibt es den Tag nicht (z. B. 31.), dann der letzte Tag des Monats.
   - `yearly`: gleicher Tag und Monat wie `start_date`; 29. Februar → 28. Februar in Nicht-Schaltjahren.
+  - Mit `interval` N gilt dasselbe für jede N-te Woche bzw. jeden N-ten Monat/jedes N-te Jahr, immer ab `start_date` gezählt (vierteljährlich ab 31.01. → 30.04., 31.07., 31.10.).
+  - Fehlt `interval` beim Push (ältere App-Version), behält der Server den gespeicherten Wert (neue Regel: 1). Ändern sich Start, Einheit oder Intervall, berechnet der Server `next_due_date` neu.
+  - Apps bieten die Vorgaben wöchentlich, alle 2 Wochen, monatlich, vierteljährlich, halbjährlich, jährlich sowie „Alle N Monate“. In der Schnellerfassung legt „Wiederholen“ statt einer Einzelbuchung eine Regel ab dem gewählten Datum an; die erste Buchung erzeugt der Server.
 
 **Standard-Kategorien** (beim ersten Setup angelegt): Ausgaben – Lebensmittel, Wohnen, Mobilität, Freizeit, Gesundheit, Kleidung, Abos, Sonstiges; Einnahmen – Gehalt, Sonstige Einnahmen.
 

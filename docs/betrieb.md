@@ -55,6 +55,8 @@ docker compose up -d --build
 
 Migrationen laufen beim Start der API automatisch. Daten bleiben in `${DATA_DIR}/postgres` erhalten.
 
+**Hinweis Server und iOS-App:** Ältere iOS-Versionen synchronisieren mit einem neueren Server weiter (unbekannte Felder werden ignoriert). Neue Funktionen zeigen sie aber nicht richtig an – z. B. erscheint eine vierteljährliche Regel dort als „monatlich“, bleibt beim Speichern aber vierteljährlich. Die iOS-App daher zeitnah mit aktualisieren.
+
 ## Backup
 
 Der Container `backup` erstellt täglich um 02:30 (Zeitzone `TZ`) `${BACKUP_DIR}/haushaltsbuch-YYYY-MM-DD.dump` (`pg_dump -Fc`) und löscht Dumps älter als 30 Tage. Manuell auslösen:
