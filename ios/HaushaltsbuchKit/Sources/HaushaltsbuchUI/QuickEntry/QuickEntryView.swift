@@ -80,7 +80,13 @@ private struct QuickEntryContent: View {
                         onSaved()
                     } catch {
                         logger.error("Speichern fehlgeschlagen: \(String(describing: error), privacy: .public)")
-                        errorMessage = "Die Buchung konnte nicht gespeichert werden."
+                        if case let RepositoryError.invalid(message) = error {
+                            errorMessage = message
+                        } else {
+                            errorMessage = model.repeatRhythm == nil
+                                ? "Die Buchung konnte nicht gespeichert werden."
+                                : "Die wiederkehrende Buchung konnte nicht gespeichert werden."
+                        }
                     }
                 }
 

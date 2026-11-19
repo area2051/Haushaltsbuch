@@ -17,7 +17,10 @@ public final class QuickEntryModel {
     public var day: CalendarDay
     public var paidBy: UUID
     public var note = ""
-    public var detailsExpanded = false
+    public var detailsExpanded = false {
+        // Ein verborgener Rhythmus würde den nächsten Kategorie-Tipp unbemerkt zur Regel machen.
+        didSet { if !detailsExpanded { repeatRhythm = nil } }
+    }
     /// Gesetzt: Speichern legt statt einer Buchung eine wiederkehrende Regel ab `day` an; die erste
     /// Buchung erzeugt der Server (ist `day` heute oder früher, sofort).
     public var repeatRhythm: Rhythm?

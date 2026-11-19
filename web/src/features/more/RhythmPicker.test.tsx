@@ -39,9 +39,9 @@ test('a stored custom rhythm opens as custom with its number', () => {
 test('with allowNone, "Nicht wiederholen" clears the rhythm', async () => {
   render(<Harness initial={null} allowNone />)
   expect(value()).toBe('none')
-  await userEvent.selectOptions(screen.getByLabelText('Rhythmus'), 'Monatlich')
+  await userEvent.selectOptions(screen.getByLabelText('Wiederholen'), 'Monatlich')
   expect(value()).toBe('monthly×1')
-  await userEvent.selectOptions(screen.getByLabelText('Rhythmus'), 'Nicht wiederholen')
+  await userEvent.selectOptions(screen.getByLabelText('Wiederholen'), 'Nicht wiederholen')
   expect(value()).toBe('none')
 })
 
@@ -53,4 +53,10 @@ test('typing a number that matches a preset keeps the custom field open', async 
   await userEvent.type(n, '12')
   expect(value()).toBe('monthly×12')
   expect(screen.getByLabelText('Anzahl Monate')).toBeInTheDocument()
+})
+
+test('a stored custom weekly rhythm is offered as "Alle N Wochen"', () => {
+  render(<Harness initial={{ frequency: 'weekly', interval: 3 }} />)
+  expect(screen.getByLabelText('Rhythmus')).toHaveDisplayValue('Alle N Wochen …')
+  expect(screen.getByLabelText('Anzahl Wochen')).toHaveValue(3)
 })

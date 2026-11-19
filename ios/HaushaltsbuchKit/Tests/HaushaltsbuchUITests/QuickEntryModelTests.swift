@@ -146,3 +146,12 @@ private struct QuickEntryFixture {
     #expect(rule.paidBy == QuickEntryFixture.me && rule.isDirty)
     #expect(try f.container.mainContext.fetch(FetchDescriptor<TransactionEntity>()).isEmpty)
 }
+
+@MainActor @Test func collapsingDetailsClearsRepeat() throws {
+    let f = try QuickEntryFixture()
+    let m = f.model()
+    m.detailsExpanded = true
+    m.repeatRhythm = Rhythm(frequency: .monthly, interval: 1)
+    m.detailsExpanded = false
+    #expect(m.repeatRhythm == nil)
+}

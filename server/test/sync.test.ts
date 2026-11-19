@@ -467,7 +467,8 @@ describe('POST /sync', () => {
   })
 
   test('interval is stored and returned; changing it recomputes nextDueDate', async () => {
-    const { admin, token } = await start()
+    // No generator here: it would book the due occurrence and move nextDueDate on, hiding the recompute.
+    const { admin, token } = await start({ onRulesChanged: async () => {} })
     const cat = await categoryId(token)
     const record = rule({ categoryId: cat, paidBy: admin.id, startDate: '2025-11-15', interval: 3 })
     const created = await sync(token, 0, { recurringRules: [record] })
@@ -475,9 +476,12 @@ describe('POST /sync', () => {
     expect(created.changes.recurringRules[0]).toMatchObject({ interval: 3 })
 
     await t.db.update(recurringRules).set({ nextDueDate: '2026-02-15' }).where(eq(recurringRules.id, record.id))
-    // every 2 months from 2025-11-15 → first >= 2026-01-15 is 2026-03-15
-    const changed = await sync(token, 0, { recurringRules: [{ ...record, interval: 2 }] })
-    expect(changed.changes.recurringRules[0]).toMatchObject({ interval: 2, nextDueDate: '2026-03-15' })
+    // Today is 2026-01-15. Every 2 months from 2025-11-15: 2025-11-15, 2026-01-15, … → first >= today is 2026-01-15.
+    const every2 = await sync(token, 0, { recurringRules: [{ ...record, interval: 2 }] })
+    expect(every2.changes.recurringRules[0]).toMatchObject({ interval: 2, nextDueDate: '2026-01-15' })
+    // Every 4 months from 2025-11-15: 2025-11-15, 2026-03-15, … → 2026-03-15.
+    const every4 = await sync(token, 0, { recurringRules: [{ ...record, interval: 4 }] })
+    expect(every4.changes.recurringRules[0]).toMatchObject({ interval: 4, nextDueDate: '2026-03-15' })
   })
 
   test('a push without interval keeps the stored interval (older apps), new rules default to 1', async () => {

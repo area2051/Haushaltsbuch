@@ -42,14 +42,14 @@ export function RhythmPicker({ value, onChange, allowNone }: { value: Rhythm | n
       <label htmlFor={id} className="block px-1 text-[13px] font-medium text-ink-2">
         {allowNone ? 'Wiederholen' : 'Rhythmus'}
       </label>
-      <Select id={id} aria-label="Rhythmus" value={selected} onChange={(e) => choose(e.target.value)}>
+      <Select id={id} value={selected} onChange={(e) => choose(e.target.value)}>
         {allowNone && <option value={NONE}>Nicht wiederholen</option>}
         {RHYTHM_PRESETS.map((p) => (
           <option key={p.id} value={p.id}>
             {p.label}
           </option>
         ))}
-        <option value={CUSTOM}>Alle N Monate …</option>
+        <option value={CUSTOM}>{`Alle N ${UNIT[value && selected === CUSTOM ? value.frequency : 'monthly']} …`}</option>
       </Select>
       {value && selected === CUSTOM && (
         <div className="flex items-center gap-3 px-1">

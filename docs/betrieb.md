@@ -55,7 +55,10 @@ docker compose up -d --build
 
 Migrationen laufen beim Start der API automatisch. Daten bleiben in `${DATA_DIR}/postgres` erhalten.
 
-**Hinweis Server und iOS-App:** Ältere iOS-Versionen synchronisieren mit einem neueren Server weiter (unbekannte Felder werden ignoriert). Neue Funktionen zeigen sie aber nicht richtig an – z. B. erscheint eine vierteljährliche Regel dort als „monatlich“, bleibt beim Speichern aber vierteljährlich. Die iOS-App daher zeitnah mit aktualisieren.
+**Reihenfolge: erst Server, dann iOS-App.**
+- Neuer Server, alte iOS-App: funktioniert. Die alte App ignoriert neue Felder; eine vierteljährliche Regel erscheint dort als „monatlich“, bleibt beim Speichern aber vierteljährlich (der Server behält das Intervall, wenn die App es nicht mitschickt).
+- Neue iOS-App, alter Server: **funktioniert nicht** – die neue App erwartet z. B. das Feld `interval` und kann die Sync-Antwort sonst nicht lesen. Den Server also immer zuerst aktualisieren.
+- Nach dem Update holt die neue iOS-App einmalig alle Daten neu (neuer Sync-Cursor), damit Felder, die die alte App verworfen hat, wieder stimmen. Ungesendete Änderungen bleiben dabei erhalten.
 
 ## Backup
 

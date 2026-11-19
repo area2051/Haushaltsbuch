@@ -16,7 +16,7 @@ import type { Kind, Transaction, TransactionInput } from '../../domain/types'
 import { cn } from '../../lib/cn'
 import { uuidv4 } from '../../lib/uuid'
 import { type Rhythm, RhythmPicker } from '../more/RhythmPicker'
-import { MAX_INTERVAL, rhythmLabel, ruleProblem, toRule } from '../more/rules'
+import { rhythmLabel, type RuleDraft, ruleProblem, toRule } from '../more/rules'
 import { type Draft, draftProblem, toTransaction } from './draft'
 
 type Ctx = { openNew(): void; openEdit(tx: Transaction): void }
@@ -63,6 +63,18 @@ export function EntryProvider({ children }: { children: ReactNode }) {
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'del'] as const
+
+/** Rule built from the entry form („Wiederholen“): starts on the chosen date, no end. */
+const ruleDraftFor = (d: Draft, r: Rhythm): RuleDraft => ({
+  cents: d.cents,
+  kind: d.kind,
+  categoryId: d.categoryId,
+  paidBy: d.paidBy,
+  note: d.note,
+  ...r,
+  startDate: d.date,
+  endDate: '',
+})
 
 function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone(): void }) {
   const saveRecord = useSaver()
@@ -124,7 +136,7 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
 
   /** The server books the first occurrence itself (at once if the date is today or earlier). */
   function saveRule(d: Draft, r: Rhythm) {
-    const ruleDraft = { cents: d.cents, kind: d.kind, categoryId: d.categoryId, paidBy: d.paidBy, note: d.note, ...r, startDate: d.date, endDate: '' }
+    const ruleDraft = ruleDraftFor(d, r)
     if (ruleProblem(ruleDraft)) return
     onDone()
     void saveRecord('recurringRules', toRule(ruleDraft, uuidv4()), {
@@ -142,7 +154,7 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
 
   const problem = draftProblem(draft)
   const offline = !data.online
-  const repeatInvalid = repeat !== null && (!Number.isInteger(repeat.interval) || repeat.interval < 1 || repeat.interval > MAX_INTERVAL)
+  const repeatInvalid = repeat !== null && ruleProblem(ruleDraftFor(draft, repeat)) !== null
   const amountReady = draft.cents > 0 && !offline
 
   return (
@@ -209,7 +221,13 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
       </section>
 
       {!editing && (
-        <button type="button" onClick={() => setDetails((v) => !v)} className="flex w-full items-center justify-between rounded-2xl bg-tile px-4 py-3 text-[15px] font-medium shadow-tile">
+        <button
+          type="button"
+          onClick={() => {
+            // A hidden repeat setting would turn the next category tap into a rule unnoticed.
+            if (details) setRepeat(null)
+            setDetails(!details)
+          }} className="flex w-full items-center justify-between rounded-2xl bg-tile px-4 py-3 text-[15px] font-medium shadow-tile">
           Details
           <ChevronDown className={cn('size-5 text-ink-3 transition-transform', details && 'rotate-180')} />
         </button>

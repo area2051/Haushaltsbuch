@@ -505,6 +505,18 @@ import HaushaltsbuchCore
     #expect(UserDefaultsCursorStore(key: store.key, defaults: defaults).lastVersion == 17)
 }
 
+/// Eine App-Version mit neuem Datenmodell (hier: `interval` der Regeln) darf den Cursor der alten
+/// Version nicht weiterverwenden: Die alte App hat das Feld nie gespeichert, und unveränderte
+/// Datensätze kämen inkrementell nie wieder. Ein frischer Cursor holt einmal alles neu.
+@Test func cursorFromBeforeTheIntervalFieldIsNotReused() {
+    let defaults = UserDefaults(suiteName: "SyncCursor-\(UUID().uuidString)")!
+    let user = UUID()
+    defaults.set(17, forKey: "sync.lastVersion.http://nas.local:3000.\(user.uuidString.lowercased())")
+    let store = UserDefaultsCursorStore(serverURL: URL(string: "http://nas.local:3000")!, userId: user,
+                                        defaults: defaults)
+    #expect(store.lastVersion == 0)
+}
+
 // MARK: Abgelehnte Änderungen an synchronisierten Datensätzen (Final-Review Finding 1)
 
 private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
