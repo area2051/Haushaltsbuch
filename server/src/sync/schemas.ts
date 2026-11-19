@@ -60,6 +60,8 @@ export const recurringRuleRecord = z.object({
   note,
   paidBy: id,
   frequency: z.enum(['weekly', 'monthly', 'yearly']),
+  /** Every N units (1–24). Optional on push: missing keeps the stored value (1 for new rules). */
+  interval: z.number().int().min(1).max(24).optional(),
   startDate: calendarDate.refine((s) => s >= '2000-01-01', 'must be on or after 2000-01-01'),
   endDate: calendarDate.nullable(),
 }).refine((r) => r.endDate === null || r.endDate >= r.startDate, {
@@ -137,6 +139,7 @@ export const recurringRuleRecordOut = z.object({
   note: z.string().nullable(),
   paidBy: outId,
   frequency: z.enum(['weekly', 'monthly', 'yearly']),
+  interval: z.number().int(),
   startDate: outDate,
   endDate: outDate.nullable(),
   nextDueDate: outDate,

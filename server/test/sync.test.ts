@@ -463,7 +463,43 @@ describe('POST /sync', () => {
     const record = rule({ categoryId: cat, paidBy: admin.id, startDate: '2026-02-01' })
     const r = await sync(token, 0, { recurringRules: [{ ...record, nextDueDate: '2030-01-01' }] })
     expect(r.rejected).toEqual([])
-    expect(r.changes.recurringRules).toEqual([{ ...record, nextDueDate: '2026-02-01', version: expect.any(Number) }])
+    expect(r.changes.recurringRules).toEqual([{ ...record, interval: 1, nextDueDate: '2026-02-01', version: expect.any(Number) }])
+  })
+
+  test('interval is stored and returned; changing it recomputes nextDueDate', async () => {
+    const { admin, token } = await start()
+    const cat = await categoryId(token)
+    const record = rule({ categoryId: cat, paidBy: admin.id, startDate: '2025-11-15', interval: 3 })
+    const created = await sync(token, 0, { recurringRules: [record] })
+    expect(created.rejected).toEqual([])
+    expect(created.changes.recurringRules[0]).toMatchObject({ interval: 3 })
+
+    await t.db.update(recurringRules).set({ nextDueDate: '2026-02-15' }).where(eq(recurringRules.id, record.id))
+    // every 2 months from 2025-11-15 → first >= 2026-01-15 is 2026-03-15
+    const changed = await sync(token, 0, { recurringRules: [{ ...record, interval: 2 }] })
+    expect(changed.changes.recurringRules[0]).toMatchObject({ interval: 2, nextDueDate: '2026-03-15' })
+  })
+
+  test('a push without interval keeps the stored interval (older apps), new rules default to 1', async () => {
+    const { admin, token } = await start()
+    const cat = await categoryId(token)
+    const withoutInterval = rule({ categoryId: cat, paidBy: admin.id })
+    const quarterly = { ...withoutInterval, interval: 3 }
+    await sync(token, 0, { recurringRules: [quarterly] })
+    const r = await sync(token, 0, { recurringRules: [{ ...withoutInterval, note: 'Grundsteuer' }] })
+    expect(r.changes.recurringRules.find((x) => x.id === quarterly.id)).toMatchObject({ interval: 3, note: 'Grundsteuer' })
+
+    const fresh = rule({ categoryId: cat, paidBy: admin.id })
+    const r2 = await sync(token, 0, { recurringRules: [fresh] })
+    expect(r2.changes.recurringRules.find((x) => x.id === fresh.id)).toMatchObject({ interval: 1 })
+  })
+
+  test.each([0, 25, 1.5, '3'])('interval %j is rejected', async (interval) => {
+    const { admin, token } = await start()
+    const cat = await categoryId(token)
+    const r = await sync(token, 0, { recurringRules: [rule({ categoryId: cat, paidBy: admin.id, interval })] })
+    expect(r.rejected).toHaveLength(1)
+    expect(r.rejected[0]).toMatchObject({ table: 'recurringRules' })
   })
 
   test('changing startDate/frequency recomputes nextDueDate as first occurrence >= today; other edits keep it', async () => {

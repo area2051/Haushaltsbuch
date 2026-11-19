@@ -55,3 +55,30 @@ describe('dueDates', () => {
     ).toEqual({ dates: ['2026-02-28', '2026-03-31', '2026-04-30'], nextDueDate: '2026-05-31' })
   })
 })
+
+describe('interval (every N units)', () => {
+  test('quarterly property tax: every 3 months on the 15th', () => {
+    expect(nextOccurrence('2026-02-15', 'monthly', '2026-02-15', 3)).toBe('2026-05-15')
+    expect(nextOccurrence('2026-02-15', 'monthly', '2026-05-15', 3)).toBe('2026-08-15')
+    expect(nextOccurrence('2026-02-15', 'monthly', '2026-11-15', 3)).toBe('2027-02-15')
+  })
+  test('quarterly from Jan 31 clamps to month end and stays anchored', () => {
+    expect(nextOccurrence('2026-01-31', 'monthly', '2026-01-31', 3)).toBe('2026-04-30')
+    expect(nextOccurrence('2026-01-31', 'monthly', '2026-04-30', 3)).toBe('2026-07-31')
+  })
+  test('between occurrences jumps to the next one, not the next month', () =>
+    expect(nextOccurrence('2026-02-15', 'monthly', '2026-03-01', 3)).toBe('2026-05-15'))
+  test('half-yearly', () => expect(nextOccurrence('2026-01-10', 'monthly', '2026-01-10', 6)).toBe('2026-07-10'))
+  test('every 2 weeks keeps the weekday', () => {
+    expect(nextOccurrence('2026-11-02', 'weekly', '2026-11-02', 2)).toBe('2026-11-16')
+    expect(nextOccurrence('2026-11-02', 'weekly', '2026-11-09', 2)).toBe('2026-11-16')
+  })
+  test('every 2 years', () => expect(nextOccurrence('2026-03-01', 'yearly', '2026-03-01', 2)).toBe('2028-03-01'))
+  test('first occurrence on or after a date respects the interval', () =>
+    expect(firstOccurrenceOnOrAfter('2026-02-15', 'monthly', '2026-06-01', 3)).toBe('2026-08-15'))
+  test('catching up several quarters, stopping at endDate', () => {
+    expect(
+      dueDates({ startDate: '2026-02-15', frequency: 'monthly', interval: 3, nextDueDate: '2026-02-15', endDate: '2026-09-30' }, '2026-11-20'),
+    ).toEqual({ dates: ['2026-02-15', '2026-05-15', '2026-08-15'], nextDueDate: '2026-11-15' })
+  })
+})

@@ -153,6 +153,7 @@ async function upsertRecurringRule(sp: Tx, r: RecurringRuleRecord, today: string
     .select({
       startDate: recurringRules.startDate,
       frequency: recurringRules.frequency,
+      interval: recurringRules.interval,
       nextDueDate: recurringRules.nextDueDate,
       paidBy: recurringRules.paidBy,
     })
@@ -161,17 +162,20 @@ async function upsertRecurringRule(sp: Tx, r: RecurringRuleRecord, today: string
   await checkPaidBy(sp, r, existing?.paidBy)
   if (!r.deleted) await reviveCategory(sp, r.categoryId)
 
+  // Older clients don't send `interval`: keep the stored one instead of resetting it to 1.
+  const interval = r.interval ?? existing?.interval ?? 1
+
   let nextDueDate: string
   if (!existing) nextDueDate = r.startDate
-  else if (existing.startDate !== r.startDate || existing.frequency !== r.frequency) {
-    nextDueDate = firstOccurrenceOnOrAfter(r.startDate, r.frequency, today)
+  else if (existing.startDate !== r.startDate || existing.frequency !== r.frequency || existing.interval !== interval) {
+    nextDueDate = firstOccurrenceOnOrAfter(r.startDate, r.frequency, today, interval)
   } else nextDueDate = existing.nextDueDate
 
   const { id: _id, ...fields } = r
   await sp
     .insert(recurringRules)
-    .values({ ...r, nextDueDate })
-    .onConflictDoUpdate({ target: recurringRules.id, set: { ...fields, nextDueDate, ...bump() } })
+    .values({ ...r, interval, nextDueDate })
+    .onConflictDoUpdate({ target: recurringRules.id, set: { ...fields, interval, nextDueDate, ...bump() } })
 }
 
 async function upsertTransaction(sp: Tx, r: TransactionRecord): Promise<void> {
@@ -283,6 +287,7 @@ export async function pull(
         note: recurringRules.note,
         paidBy: recurringRules.paidBy,
         frequency: recurringRules.frequency,
+        interval: recurringRules.interval,
         startDate: recurringRules.startDate,
         endDate: recurringRules.endDate,
         nextDueDate: recurringRules.nextDueDate,
@@ -312,7 +317,7 @@ export async function pull(
 /**
  * Applies a push and returns everything newer than `req.lastVersion` (spec §4), in one DB
  * transaction serialized by LOCK_SYNC. `today` (YYYY-MM-DD in the configured TZ) is used to
- * recompute `nextDueDate` of rules whose startDate/frequency changed.
+ * recompute `nextDueDate` of rules whose startDate/frequency/interval changed.
  *
  * Order: categories → recurringRules → transactions → budgets, so references inside one push
  * resolve. Category *deletions* are applied last, so a push that deletes a category together

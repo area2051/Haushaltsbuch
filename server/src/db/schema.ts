@@ -99,6 +99,8 @@ export const recurringRules = pgTable(
       .notNull()
       .references(() => users.id),
     frequency: frequencyEnum('frequency').notNull(),
+    /** Every N weeks/months/years (e.g. monthly × 3 = quarterly). */
+    interval: integer('interval_count').notNull().default(1),
     startDate: date('start_date', { mode: 'string' }).notNull(),
     endDate: date('end_date', { mode: 'string' }),
     nextDueDate: date('next_due_date', { mode: 'string' }).notNull(),
@@ -106,6 +108,7 @@ export const recurringRules = pgTable(
   (t) => [
     index('recurring_rules_version_idx').on(t.version),
     check('recurring_rules_amount_positive', sql`${t.amountCents} > 0`),
+    check('recurring_rules_interval_range', sql`${t.interval} BETWEEN 1 AND 24`),
   ],
 )
 
