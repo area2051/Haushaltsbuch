@@ -129,3 +129,20 @@ private struct QuickEntryFixture {
     try m.save(category: f.food.id)
     #expect(f.repository.activeTransactions().first?.note?.count == 200)
 }
+
+@MainActor @Test func repeatCreatesARuleFromTheChosenDayInsteadOfATransaction() throws {
+    let f = try QuickEntryFixture()
+    let m = f.model()
+    for d in [8, 9, 0, 0] { m.amount.append(digit: d) }
+    m.note = "Grundsteuer"
+    m.repeatRhythm = Rhythm(frequency: .monthly, interval: 3)
+    try m.save(category: f.rent.id)
+
+    let rules = try f.container.mainContext.fetch(FetchDescriptor<RecurringRuleEntity>())
+    let rule = try #require(rules.first)
+    #expect(rules.count == 1)
+    #expect(rule.amountCents == 8900 && rule.categoryId == f.rent.id && rule.note == "Grundsteuer")
+    #expect(rule.frequency == "monthly" && rule.interval == 3 && rule.startDate == "2026-11-02" && rule.endDate == nil)
+    #expect(rule.paidBy == QuickEntryFixture.me && rule.isDirty)
+    #expect(try f.container.mainContext.fetch(FetchDescriptor<TransactionEntity>()).isEmpty)
+}

@@ -44,3 +44,13 @@ test('with allowNone, "Nicht wiederholen" clears the rhythm', async () => {
   await userEvent.selectOptions(screen.getByLabelText('Rhythmus'), 'Nicht wiederholen')
   expect(value()).toBe('none')
 })
+
+test('typing a number that matches a preset keeps the custom field open', async () => {
+  render(<Harness initial={{ frequency: 'monthly', interval: 1 }} />)
+  await userEvent.selectOptions(screen.getByLabelText('Rhythmus'), 'Alle N Monate …')
+  const n = screen.getByLabelText('Anzahl Monate')
+  await userEvent.clear(n)
+  await userEvent.type(n, '12')
+  expect(value()).toBe('monthly×12')
+  expect(screen.getByLabelText('Anzahl Monate')).toBeInTheDocument()
+})

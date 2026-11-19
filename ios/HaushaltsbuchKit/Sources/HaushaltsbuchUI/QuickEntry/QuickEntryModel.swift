@@ -18,6 +18,9 @@ public final class QuickEntryModel {
     public var paidBy: UUID
     public var note = ""
     public var detailsExpanded = false
+    /// Gesetzt: Speichern legt statt einer Buchung eine wiederkehrende Regel ab `day` an; die erste
+    /// Buchung erzeugt der Server (ist `day` heute oder früher, sofort).
+    public var repeatRhythm: Rhythm?
 
     /// Nicht archivierte Kategorien der gewählten Art, nach jüngster Nutzung gerankt.
     public private(set) var categories: [CategoryValue] = []
@@ -53,10 +56,19 @@ public final class QuickEntryModel {
         return options
     }
 
-    /// Legt die Buchung an. Leere (oder nur aus Leerraum bestehende) Notiz → `nil`.
+    /// Legt die Buchung an (bzw. die Regel, wenn `repeatRhythm` gesetzt ist).
+    /// Leere (oder nur aus Leerraum bestehende) Notiz → `nil`.
     public func save(category: UUID) throws {
         if didSave { return }
         guard amount.isValid else { throw SaveError.invalidAmount }
+        if let rhythm = repeatRhythm {
+            _ = try repository.saveRule(RuleDraft(amountCents: amount.cents, kind: kind, categoryId: category,
+                                                  note: NoteLimit.normalized(note), paidBy: paidBy,
+                                                  frequency: rhythm.frequency, interval: rhythm.interval,
+                                                  startDate: day))
+            didSave = true
+            return
+        }
         try repository.addTransaction(amountCents: amount.cents, kind: kind, categoryId: category,
                                       day: day, paidBy: paidBy, note: NoteLimit.normalized(note))
         didSave = true

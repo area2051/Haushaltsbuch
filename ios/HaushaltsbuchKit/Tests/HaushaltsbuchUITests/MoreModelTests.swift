@@ -62,9 +62,6 @@ private func day(_ y: Int, _ m: Int, _ d: Int) -> CalendarDay { CalendarDay(year
 // MARK: Wiederkehrende
 
 @Test func ruleLabels() {
-    #expect(RuleFormat.frequency(.weekly) == "wöchentlich")
-    #expect(RuleFormat.frequency(.monthly) == "monatlich")
-    #expect(RuleFormat.frequency(.yearly) == "jährlich")
     #expect(RuleFormat.nextDue(day(2026, 12, 1)) == "Nächster Termin: 01.12.2026")
     #expect(RuleFormat.nextDue(nil) == "Nächster Termin: wird vom Server berechnet")
 }

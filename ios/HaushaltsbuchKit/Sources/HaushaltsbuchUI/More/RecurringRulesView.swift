@@ -107,7 +107,7 @@ private struct RuleRow: View {
     let category: CategoryEntity?
 
     private var period: String {
-        var text = "\(RuleFormat.frequency(rule.frequencyValue).capitalized) ab \(RuleFormat.date(rule.startDay))"
+        var text = "\(rule.rhythm.label) ab \(RuleFormat.date(rule.startDay))"
         if let end = rule.endDay { text += " bis \(RuleFormat.date(end))" }
         return text
     }

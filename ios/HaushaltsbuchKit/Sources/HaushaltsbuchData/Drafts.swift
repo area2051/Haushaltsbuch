@@ -25,11 +25,14 @@ public struct RuleDraft: Sendable {
     public var note: String?
     public var paidBy: UUID
     public var frequency: Frequency
+    /// Alle N Einheiten (1–24), z. B. monatlich × 3 = vierteljährlich.
+    public var interval: Int
     public var startDate: CalendarDay
     public var endDate: CalendarDay?
 
     public init(id: UUID? = nil, amountCents: Int, kind: Kind, categoryId: UUID, note: String? = nil,
-                paidBy: UUID, frequency: Frequency, startDate: CalendarDay, endDate: CalendarDay? = nil) {
+                paidBy: UUID, frequency: Frequency, interval: Int = 1, startDate: CalendarDay,
+                endDate: CalendarDay? = nil) {
         self.id = id
         self.amountCents = amountCents
         self.kind = kind
@@ -37,6 +40,7 @@ public struct RuleDraft: Sendable {
         self.note = note
         self.paidBy = paidBy
         self.frequency = frequency
+        self.interval = interval
         self.startDate = startDate
         self.endDate = endDate
     }
@@ -44,6 +48,7 @@ public struct RuleDraft: Sendable {
     /// Deutsche Fehlermeldung oder `nil`, wenn gültig.
     public func validationError() -> String? {
         if amountCents <= 0 { return "Bitte einen Betrag eingeben." }
+        if !(1...Rhythm.maxInterval).contains(interval) { return "Bitte als Intervall eine Zahl von 1 bis 24 wählen." }
         if startDate < CalendarDay(year: 2000, month: 1, day: 1)! {
             return "Der Start darf nicht vor dem 01.01.2000 liegen."
         }

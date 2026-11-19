@@ -77,7 +77,7 @@ import HaushaltsbuchCore
         categories: [.init(archived: true, color: "#AABBCC", deleted: false, icon: "house", id: l(catId),
                            kind: .income, name: "Gehalt", sortOrder: 4, version: 10)],
         recurringRules: [.init(amountCents: 7000, categoryId: l(catId), deleted: false, endDate: "2027-12-31",
-                               frequency: .yearly, id: l(ruleId), kind: .income, nextDueDate: "2027-01-15",
+                               frequency: .yearly, id: l(ruleId), interval: 3, kind: .income, nextDueDate: "2027-01-15",
                                note: "Bonus", paidBy: l(memberId), startDate: "2026-01-15", version: 11)],
         transactions: [
             .init(amountCents: 250000, categoryId: l(catId), date: "2026-10-31", deleted: false, id: l(txId),
@@ -97,6 +97,7 @@ import HaushaltsbuchCore
     #expect(cat.kind == "income" && cat.sortOrder == 4 && cat.archived && cat.version == 10 && !cat.isDirty)
     let rule = try #require(try f.all(RecurringRuleEntity.self).first)
     #expect(rule.id == ruleId && rule.amountCents == 7000 && rule.frequency == "yearly" && rule.kind == "income")
+    #expect(rule.interval == 3)
     #expect(rule.endDate == "2027-12-31" && rule.nextDueDate == "2027-01-15" && rule.startDate == "2026-01-15")
     #expect(rule.note == "Bonus" && rule.paidBy == memberId && rule.categoryId == catId && rule.version == 11)
     let budget = try #require(try f.all(BudgetEntity.self).first)
@@ -388,7 +389,7 @@ import HaushaltsbuchCore
     tx.markDirty()
     f.context.insert(tx)
     let rule = try f.repo.saveRule(RuleDraft(amountCents: 5000, kind: .expense, categoryId: cat.id, note: "Miete",
-                                             paidBy: f.user, frequency: .weekly, startDate: f.day,
+                                             paidBy: f.user, frequency: .weekly, interval: 2, startDate: f.day,
                                              endDate: CalendarDay(year: 2027, month: 1, day: 31)))
     let l = { (u: UUID) in u.uuidString.lowercased() }
     let goodId = UUID()
@@ -415,6 +416,7 @@ import HaushaltsbuchCore
     let r = try #require(req.changes.recurringRules?.first)
     #expect(r.id == l(rule.id) && r.frequency == .weekly && r.startDate == "2026-11-01" && r.endDate == "2027-01-31")
     #expect(r.note == "Miete" && r.paidBy == l(f.user) && r.amountCents == 5000)
+    #expect(r.interval == 2)
 
     let ids = Set(try f.all(TransactionEntity.self).map(\.id))
     #expect(ids == [tx.id, goodId])

@@ -109,6 +109,9 @@ private struct QuickEntryContent: View {
                 DatePicker("Datum", selection: dayBinding, displayedComponents: .date)
                     .environment(\.locale, Locale(identifier: "de_DE"))
 
+                // Gesetzt: Speichern legt eine wiederkehrende Regel ab diesem Datum an.
+                RhythmPickerView(rhythm: $model.repeatRhythm, allowNone: true)
+
                 HStack {
                     Text("Bezahlt von")
                     Spacer()

@@ -308,6 +308,11 @@
             "format": "uuid",
             "type": "string"
           },
+          "interval": {
+            "maximum": 24,
+            "minimum": 1,
+            "type": "integer"
+          },
           "kind": {
             "enum": [
               "income",
@@ -378,6 +383,11 @@
             "format": "uuid",
             "type": "string"
           },
+          "interval": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "kind": {
             "enum": [
               "income",
@@ -419,6 +429,7 @@
           "note",
           "paidBy",
           "frequency",
+          "interval",
           "startDate",
           "endDate",
           "nextDueDate"

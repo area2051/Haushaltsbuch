@@ -221,13 +221,15 @@ public final class Repository {
             existing.note = draft.note
             existing.paidBy = draft.paidBy
             existing.frequency = draft.frequency.rawValue
+            existing.interval = draft.interval
             existing.startDate = draft.startDate.string
             existing.endDate = draft.endDate?.string
             rule = existing
         } else {
             rule = RecurringRuleEntity(amountCents: draft.amountCents, kind: draft.kind,
                                        categoryId: draft.categoryId, note: draft.note, paidBy: draft.paidBy,
-                                       frequency: draft.frequency, startDate: draft.startDate,
+                                       frequency: draft.frequency, interval: draft.interval,
+                                       startDate: draft.startDate,
                                        endDate: draft.endDate)
             context.insert(rule)
         }

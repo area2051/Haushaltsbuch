@@ -15,17 +15,24 @@ const CUSTOM = 'custom'
  */
 export function RhythmPicker({ value, onChange, allowNone }: { value: Rhythm | null; onChange(r: Rhythm | null): void; allowNone?: boolean }) {
   const id = useId()
-  const selected = value === null ? NONE : presetFor(value.frequency, value.interval)
+  // Own state: otherwise typing „12“ would hit the preset „Monatlich“ at „1“ and close the field.
+  const [customMode, setCustomMode] = useState(() => value !== null && presetFor(value.frequency, value.interval) === CUSTOM)
+  const selected = value === null ? NONE : customMode ? CUSTOM : presetFor(value.frequency, value.interval)
   // Text state so the number field can be empty while typing.
   const [text, setText] = useState(value ? String(value.interval) : '2')
 
   function choose(v: string) {
-    if (v === NONE) return onChange(null)
+    if (v === NONE) {
+      setCustomMode(false)
+      return onChange(null)
+    }
     if (v === CUSTOM) {
       const n = value && selected === CUSTOM ? value.interval : 2
+      setCustomMode(true)
       setText(String(n))
       return onChange({ frequency: value && selected === CUSTOM ? value.frequency : 'monthly', interval: n })
     }
+    setCustomMode(false)
     const p = RHYTHM_PRESETS.find((x) => x.id === v)!
     onChange({ frequency: p.frequency, interval: p.interval })
   }
