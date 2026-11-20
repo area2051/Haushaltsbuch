@@ -1,5 +1,5 @@
-import { CalendarClock, Download, LogOut, Moon, RefreshCw, Shapes, User, Users } from 'lucide-react'
-import { useState } from 'react'
+import { CalendarClock, Download, Info, LogOut, Moon, RefreshCw, Shapes, User, Users } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useApp, useData, useMe } from '../../app/AppContext'
 import { Button } from '../../components/ui/Button'
 import { ConfirmButton } from '../../components/ui/ConfirmButton'
@@ -13,9 +13,22 @@ const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digi
 export function More() {
   const me = useMe()
   const data = useData()
-  const { store, signOut } = useApp()
+  const { api, store, signOut } = useApp()
   const [theme, setTheme] = useTheme()
   const [syncing, setSyncing] = useState(false)
+  // undefined = loading, null = unknown, string = version reported by the server
+  const [version, setVersion] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .health()
+      .then((h) => !cancelled && setVersion(h.version || null))
+      .catch(() => !cancelled && setVersion(null))
+    return () => {
+      cancelled = true
+    }
+  }, [api])
 
   const refresh = async () => {
     setSyncing(true)
@@ -73,6 +86,7 @@ export function More() {
               </Button>
             }
           />
+          <ListRow icon={Info} label={version === undefined ? 'Version …' : version ? `Version ${version}` : 'Version unbekannt'} />
         </Group>
 
         {data.pending > 0 ? (
