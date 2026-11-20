@@ -79,7 +79,7 @@ tag=$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+
 [ -n "$tag" ] || die "Kein Release (Tag vX.Y.Z) gefunden. Erst ein Release anlegen: GitHub → Actions → Release → Run workflow."
 old=$(git rev-parse HEAD)
 new=$(git rev-parse "$tag^{commit}")
-oldv=$(git describe --tags --exact-match HEAD 2> /dev/null | head -n 1 || true)
+oldv=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD 2> /dev/null | head -n 1 || true)
 [ -n "$oldv" ] || oldv=$(git rev-parse --short HEAD)
 
 # Nie zurück oder zur Seite, auch nicht mit --force.

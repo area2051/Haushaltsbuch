@@ -60,7 +60,14 @@ Nach einem Update steht der Clone im „detached HEAD“ auf dem Release-Tag. Da
 
 Es bricht vorher ab, wenn es noch keinen Release-Tag gibt (dann zuerst ein Release anlegen, siehe unten), versionierte Dateien lokal geändert sind oder der Compose-Projektname des laufenden Stacks nicht eindeutig ist (dann `COMPOSE_PROJECT_NAME=<name> sh ops/update.sh`; den Namen zeigt `docker compose ls`). Es nutzt immer `docker-compose.yml` aus dem Repo, auch wenn UGOS daneben ein eigenes `docker-compose.yaml` angelegt hat.
 
-**Erster Umstieg auf Releases:** Der Clone steht noch auf `main`. Einmal `git pull` ausführen (damit `ops/update.sh` aktuell ist), dann das Release `v1.0.0` anlegen (siehe „Release anlegen“) und `sh ops/update.sh` starten. Das Skript meldet „Bereits aktuell“, spielt den Release-Stand ein oder bricht ab („… nicht neuer als der installierte Stand“), wenn `main` schon Commits nach dem neuesten Release hat; dann zuerst ein neues Release anlegen und das Skript noch einmal starten. Danach wird auf dem NAS kein `git pull` mehr benutzt (der Clone ist detached, `git pull` schlägt fehl), nur noch `sh ops/update.sh`.
+**Erster Umstieg auf Releases:** Der Clone steht noch auf `main`, und das laufende Image ist unversioniert. Ein reines `git pull` mit anschließendem `sh ops/update.sh` würde „Bereits aktuell“ melden, ohne neu zu bauen. Deshalb so vorgehen:
+
+1. Auf GitHub prüfen, ob das Release `v1.0.0` existiert. Gibt es noch kein Release, es einmal mit `major` anlegen (0.1.0 → 1.0.0, siehe „Release anlegen“). Existiert `v1.0.0` schon, kein weiteres anlegen.
+2. Auf dem NAS: `git switch main && git pull`.
+3. `sh ops/update.sh --force` ausführen. Das ist einmal nötig, weil der Pull den Code schon auf den Release-Stand gebracht hat, ohne neu zu bauen; `--force` baut dann trotzdem neu und geht nie auf einen älteren Stand zurück. Hat `main` schon Commits nach dem neuesten Release, bricht das Skript mit „… nicht neuer als der installierte Stand“ ab; dann zuerst ein neues Release anlegen und das Skript noch einmal starten.
+4. In der Web-App unter Mehr → App prüfen, dass „Version 1.0.0“ steht.
+
+Danach wird auf dem NAS kein `git pull` mehr benutzt (der Clone ist detached, `git pull` schlägt fehl), nur noch `sh ops/update.sh`.
 
 Die laufende Version steht in der Web-App unter Mehr → App („Version X.Y.Z“) und im Feld `version` von `/health`.
 
@@ -80,9 +87,9 @@ Migrationen laufen beim Start der API automatisch. Daten bleiben in `${DATA_DIR}
 
 ## Release anlegen
 
-Ein Update auf dem NAS installiert nur Releases, keinen unfertigen Stand von `main`. Ein Release entsteht so:
+Ein Update auf dem NAS installiert nur Releases, keinen unfertigen Stand von `main`. Das allererste Release ist `v1.0.0` und entsteht mit `major` (0.1.0 → 1.0.0); es wird nur einmal angelegt. Danach gilt `patch`/`minor`/`major` wie unten beschrieben. Ein Release entsteht so:
 
-1. Änderungen per Pull Request nach `main` mergen (CI muss grün sein).
+1. Änderungen per Pull Request nach `main` mergen. Den Workflow erst starten, wenn die CI auf `main` grün ist: `main` ist nicht geschützt, und der Release-Commit selbst wird von der CI nicht getestet (er ändert nur Versionsnummern).
 2. Auf GitHub: Actions → Release → Run workflow (Branch `main`), Versionssprung wählen:
    - `patch`: Fehlerbehebung (1.0.0 → 1.0.1)
    - `minor`: neue Funktion (1.0.0 → 1.1.0)

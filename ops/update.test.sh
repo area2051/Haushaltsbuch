@@ -24,7 +24,7 @@ case "$*" in
   "rev-parse HEAD") cat "$T/state/head" ;;
   "rev-parse --short HEAD") cat "$T/state/head" ;;
   "rev-parse v"*"^{commit}") echo "$STUB_TAG_COMMIT" ;;
-  "describe --tags --exact-match HEAD") [ -n "$STUB_DESCRIBE" ] || exit 128; echo "$STUB_DESCRIBE" ;;
+  "describe --tags --exact-match --match v[0-9]* HEAD") [ -n "$STUB_DESCRIBE" ] || exit 128; echo "$STUB_DESCRIBE" ;;
   "tag -l v[0-9]* --sort=-v:refname") printf '%b' "$STUB_TAGS" ;;
   "remote get-url origin") echo "$STUB_REMOTE_URL" ;;
   "diff --quiet HEAD"*) exit "$STUB_DIRTY" ;;
