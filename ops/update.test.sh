@@ -156,6 +156,7 @@ picks_highest_tag() {
   STUB_TAGS="v1.10.0\nv1.9.0"
   run_update
   assert_exit 0
+  assert_called "fetch --quiet --tags --force --prune --prune-tags origin"
   assert_called "checkout --quiet --detach v1.10.0"
   assert_not_called "detach v1.9.0"
 }

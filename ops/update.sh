@@ -74,7 +74,7 @@ wait_healthy() {
 # --- Neuer Stand? --------------------------------------------------------------------
 
 log "Hole Releases"
-git fetch --quiet --tags --force --prune-tags origin
+git fetch --quiet --tags --force --prune --prune-tags origin
 tag=$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
 [ -n "$tag" ] || die "Kein Release (Tag vX.Y.Z) gefunden. Erst ein Release anlegen: GitHub → Actions → Release → Run workflow."
 old=$(git rev-parse HEAD)
