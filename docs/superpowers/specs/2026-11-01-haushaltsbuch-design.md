@@ -70,7 +70,8 @@ Tabellen:
 
 - **users** – `username` (eindeutig), `display_name`, `password_hash`, `is_admin`. Wird an die App nur lesend und ohne `password_hash` synchronisiert.
 - **refresh_tokens** – `user_id`, `token_hash`, `expires_at`, `device_name`. Nicht synchronisiert.
-- **categories** – `name`, `icon` (SF-Symbol-Name), `color` (Hex), `kind` (`income` | `expense`), `sort_order`, `archived`.
+- **categories** – `name`, `icon` (SF-Symbol-Name), `color` (Hex), `kind` (`income` | `expense`), `sort_order`, `archived`, `parent_id` (API: `parentId`, optional).
+  - Unterkategorien: eine Ebene, gleiche `kind` wie die Hauptkategorie. Budgets gibt es nur auf Hauptkategorien und zählen die Buchungen der Unterkategorien mit.
   - Eine Kategorie ohne Buchungen wird gelöscht (`deleted`), eine mit Buchungen nur archiviert. Archivierte Kategorien erscheinen nicht in der Erfassung, alte Buchungen behalten sie.
 - **transactions** – `amount_cents` (Integer > 0), `kind`, `category_id`, `date` (Kalenderdatum `YYYY-MM-DD`, ohne Uhrzeit), `note` (optional), `paid_by` (user_id), `recurring_rule_id` (optional).
   - Eindeutigkeit `(recurring_rule_id, date)`, wenn `recurring_rule_id` gesetzt ist.
@@ -107,6 +108,9 @@ Ein Endpunkt `POST /sync` für beide Richtungen.
 2. Gültige Datensätze per Upsert anhand der `id` schreiben; jeder bekommt eine neue `version`. Konfliktregel: **Last-Write-Wins** – die zuletzt beim Server eintreffende Änderung gewinnt.
    - Löschen einer Kategorie, auf die noch aktive Buchungen oder Regeln zeigen, wird mit `category_in_use` abgelehnt.
    - Trifft eine Buchung, Regel oder ein Budget für eine bereits gelöschte Kategorie ein (anderes Gerät war offline), wird die Kategorie als archiviert wiederhergestellt und der Datensatz angenommen.
+   - `parentId` im Push ist optional: fehlt es, bleibt der Wert; `null` löscht ihn. In der Antwort ist es immer vorhanden. Ungültige Eltern werden mit `invalid_parent` abgelehnt, eine Kategorie mit Unterkategorien kann kein Kind werden (`category_has_children`), ein Budget auf einer Unterkategorie wird mit `budget_on_subcategory` abgelehnt.
+   - Löschungen von Unterkategorien werden vor denen ihrer Hauptkategorie verarbeitet (im selben Push). Wird eine gelöschte Unterkategorie wiederbelebt, deren Hauptkategorie inzwischen ungültig ist, wird sie zur Hauptkategorie.
+   - iOS sendet `parentId: null` ausdrücklich über die `SyncParentIdMiddleware`, weil der generierte Encoder `nil` weglässt.
    - `next_due_date` wiederkehrender Regeln setzt nur der Server.
 3. Hat der Push wiederkehrende Regeln geändert, läuft danach sofort die Erzeugung wiederkehrender Buchungen (Abschnitt 5).
 4. Alle Datensätze aller Sync-Tabellen (inkl. `users` ohne Passwort-Hash, inkl. gelöschter) mit `version > lastVersion` zurückgeben – auch die gerade geschriebenen.
