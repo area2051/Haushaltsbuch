@@ -296,7 +296,7 @@ export function Overview() {
             ) : (
               <div className="-mx-2 mt-2">
                 {model.recent.map((t) => (
-                  <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} label={tree.byId.has(t.categoryId) ? tree.labelFor(t.categoryId) : undefined} payerName={data.names.get(t.paidBy)} showPayer={multiplePeople} onClick={() => openEdit(t)} />
+                  <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} label={tree.byId.has(t.categoryId) ? tree.labelFor(t.categoryId) : undefined} color={tree.colorFor(t.categoryId)} payerName={data.names.get(t.paidBy)} showPayer={multiplePeople} onClick={() => openEdit(t)} />
                 ))}
               </div>
             )}

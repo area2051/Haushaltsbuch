@@ -3,10 +3,11 @@ import { cn } from '../lib/cn'
 
 /**
  * Chip row below a main category: „Allgemein“ (= the main category itself) and its selectable
- * subcategories. Renders nothing when the main category has none.
+ * subcategories. The current `value` stays listed even when it is an archived child, so it remains
+ * visible (like iOS `CategoryChoice.keep`). Renders nothing when there is no subcategory to show.
  */
 export function SubcategoryChips({ parentId, value, onChange, tree }: { parentId: string; value: string; onChange(id: string): void; tree: CategoryTree }) {
-  const children = tree.childrenOf(parentId).filter(tree.isSelectable)
+  const children = tree.childrenOf(parentId).filter((c) => tree.isSelectable(c) || c.id === value)
   if (children.length === 0) return null
   const options = [{ id: parentId, name: 'Allgemein' }, ...children]
   return (

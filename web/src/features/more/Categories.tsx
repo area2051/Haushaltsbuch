@@ -27,7 +27,8 @@ export function Categories() {
   const tree = useCategoryTree()
   const all = useMemo(() => [...data.categories.values()].sort(byOrder), [data.categories])
   const active = all.filter((c) => !c.archived && !c.parentId && c.kind === kind)
-  const archived = all.filter((c) => c.archived && c.kind === kind)
+  // Like iOS: everything not selectable, i.e. archived ones and the children of an archived parent.
+  const archived = all.filter((c) => !tree.isSelectable(c) && c.kind === kind)
 
   /** Swaps `siblings[index]` with its neighbour (main categories, or the children of one parent). */
   async function move(siblings: Category[], index: number, dir: -1 | 1) {
@@ -42,7 +43,7 @@ export function Categories() {
   const row = (c: Category, siblings: Category[], i: number, child: boolean) => (
     <li key={c.id} className={cn('flex items-center gap-2 rounded-tile bg-tile p-2 pr-3 shadow-tile', child && 'ml-8 bg-tile/70 shadow-none')}>
       <button onClick={() => setEditing(c)} className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl p-1 text-left">
-        <CategoryIcon icon={c.icon} color={c.color} size={child ? 'sm' : 'md'} />
+        <CategoryIcon icon={c.icon} color={tree.colorFor(c.id) ?? c.color} size={child ? 'sm' : 'md'} />
         <span className="truncate text-[15px] font-medium">{c.name}</span>
       </button>
       <Button variant="ghost" size="icon" aria-label={`${c.name} nach oben`} disabled={i === 0} onClick={() => void move(siblings, i, -1)}>
@@ -88,11 +89,16 @@ export function Categories() {
           <ul className="space-y-2">
             {archived.map((c) => (
               <li key={c.id} className="flex items-center gap-3 rounded-tile bg-tile/60 p-3">
-                <CategoryIcon icon={c.icon} color={c.color} className="opacity-60" />
+                <CategoryIcon icon={c.icon} color={tree.colorFor(c.id) ?? c.color} className="opacity-60" />
                 <span className="flex-1 truncate text-[15px] text-ink-2">{tree.labelFor(c.id)}</span>
-                <Button size="sm" onClick={() => void save('categories', { ...strip(c), archived: false }, 'Kategorie wiederhergestellt')}>
-                  <ArchiveRestore className="size-4" /> Wiederherstellen
-                </Button>
+                {/* A child of an archived parent only becomes selectable again with its parent. */}
+                {c.archived && !(c.parentId && tree.byId.get(c.parentId)?.archived) ? (
+                  <Button size="sm" onClick={() => void save('categories', { ...strip(c), archived: false }, 'Kategorie wiederhergestellt')}>
+                    <ArchiveRestore className="size-4" /> Wiederherstellen
+                  </Button>
+                ) : (
+                  <span className="text-[12px] text-ink-3">Hauptkategorie zuerst wiederherstellen</span>
+                )}
               </li>
             ))}
           </ul>

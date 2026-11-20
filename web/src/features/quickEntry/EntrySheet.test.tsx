@@ -162,7 +162,8 @@ test('books on a subcategory: tapping a main category with children shows the ch
   for (const k of ['4', '2']) await user.click(dialog.getByRole('button', { name: k }))
   await user.click(dialog.getByRole('button', { name: /Wohnen/ }))
   expect(pushed(sync)).toHaveLength(0)
-  expect(chips(dialog).getByRole('button', { name: 'Allgemein' })).toHaveAttribute('aria-pressed', 'true')
+  // A chip tap saves, so nothing is pre-pressed in the fast path.
+  for (const chip of chips(dialog).getAllByRole('button')) expect(chip).toHaveAttribute('aria-pressed', 'false')
   expect(chips(dialog).queryByRole('button', { name: 'Gas' })).toBeNull()
 
   await user.click(chips(dialog).getByRole('button', { name: 'Strom' }))

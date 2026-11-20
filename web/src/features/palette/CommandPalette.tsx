@@ -97,7 +97,7 @@ export function CommandPalette() {
               const label = c ? tree.labelFor(c.id) : undefined
               return (
                 <Command.Item key={t.id} value={t.id} onSelect={() => (close(), openEdit(t))} className={item}>
-                  <CategoryIcon icon={c?.icon ?? ''} color={c?.color ?? '#999'} size="sm" />
+                  <CategoryIcon icon={c?.icon ?? ''} color={tree.colorFor(t.categoryId) ?? '#999'} size="sm" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{t.note || label}</span>
                     <span className="block text-[12px] text-ink-3">

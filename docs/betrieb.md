@@ -59,6 +59,7 @@ Migrationen laufen beim Start der API automatisch. Daten bleiben in `${DATA_DIR}
 - Neuer Server, alte iOS-App: funktioniert. Die alte App ignoriert neue Felder; eine vierteljährliche Regel erscheint dort als „monatlich“, bleibt beim Speichern aber vierteljährlich (der Server behält das Intervall, wenn die App es nicht mitschickt).
 - Neue iOS-App, alter Server: **funktioniert nicht** – die neue App erwartet z. B. das Feld `interval` und kann die Sync-Antwort sonst nicht lesen. Den Server also immer zuerst aktualisieren.
 - Unterkategorien: Migration 0003 ergänzt `parent_id`; Migration 0004 legt einmalig die 38 Standard-Unterkategorien unter den unveränderten Standard-Kategorien an (vorhandene Namen werden übersprungen). Danach die neue iOS-App installieren; sie holt einmalig alle Daten neu (Cursor-Generation v3). Ältere iOS-Versionen funktionieren weiter und zeigen Unterkategorien als flache Kategorien.
+- Vor dem Installieren der neuen iOS-App die alte App einmal mit Netz öffnen, damit ausstehende Änderungen synchronisieren. Sonst könnte eine in der alten App noch ungesendet bearbeitete Unterkategorie beim Senden ihr `parentId` verlieren und zur Hauptkategorie werden.
 - Nach dem Update holt die neue iOS-App einmalig alle Daten neu (neuer Sync-Cursor), damit Felder, die die alte App verworfen hat, wieder stimmen. Ungesendete Änderungen bleiben dabei erhalten.
 
 ## Backup

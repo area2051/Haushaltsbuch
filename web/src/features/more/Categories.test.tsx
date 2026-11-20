@@ -21,6 +21,26 @@ async function setup(seed: (sync: FakeSyncServer) => void = () => {}) {
   return { ...ctx, user: userEvent.setup() }
 }
 
+const iconColors = (li: HTMLElement) => li.querySelector<HTMLElement>('[style]')?.getAttribute('style') ?? ''
+
+test('a subcategory row shows its main category colour, not its own', async () => {
+  await setup((s) => s.put('categories', category('c-power', 'Strom', 0, { parentId: 'c-home', color: '#FF0000' })))
+  const rows = await screen.findAllByRole('listitem')
+  expect(iconColors(rows[1]!).toLowerCase()).not.toContain('ff0000')
+  expect(iconColors(rows[1]!)).toBe(iconColors(rows[0]!))
+})
+
+test('the archived list also shows active children of an archived parent, restorable only via the parent', async () => {
+  const { user, sync } = await setup((s) => s.put('categories', category('c-home', 'Wohnen', 0, { color: '#795548', archived: true })))
+  await screen.findByText('Archiviert')
+  const section = within(screen.getByText('Archiviert').closest('section')!)
+  expect(section.getByText('Wohnen')).toBeInTheDocument()
+  expect(section.getByText('Wohnen · Strom')).toBeInTheDocument()
+  expect(section.getAllByRole('button', { name: /Wiederherstellen/ })).toHaveLength(1)
+  await user.click(section.getByRole('button', { name: /Wiederherstellen/ }))
+  await waitFor(() => expect(pushed(sync)[0]).toMatchObject({ id: 'c-home', archived: false }))
+})
+
 const pushed = (sync: FakeSyncServer) => sync.requests.flatMap((r) => r.changes.categories ?? [])
 const open = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
   await user.click(await screen.findByRole('button', { name }))

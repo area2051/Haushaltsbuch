@@ -34,3 +34,13 @@ test('isSelectable is false for archived categories and children of an archived 
   expect(tree.isSelectable(tree.byId.get('old')!)).toBe(false)
   expect(tree.isSelectable(tree.byId.get('oldchild')!)).toBe(false)
 })
+
+test('colorFor is the main category colour, also for children, unknown ids give undefined', () => {
+  const t = categoryTree([
+    cat('home', 'expense', { color: '#111111' }),
+    cat('power', 'expense', { parentId: 'home', color: '#222222' }),
+  ])
+  expect(t.colorFor('power')).toBe('#111111')
+  expect(t.colorFor('home')).toBe('#111111')
+  expect(t.colorFor('gone')).toBeUndefined()
+})

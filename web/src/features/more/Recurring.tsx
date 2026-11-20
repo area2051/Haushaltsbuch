@@ -49,7 +49,7 @@ export function Recurring() {
             return (
               <li key={r.id}>
                 <button onClick={() => setEditing(r)} className="flex w-full items-center gap-3 rounded-tile bg-tile p-4 text-left shadow-tile transition active:scale-[0.99]">
-                  <CategoryIcon icon={c?.icon ?? ''} color={c?.color ?? '#999'} />
+                  <CategoryIcon icon={c?.icon ?? ''} color={tree.colorFor(r.categoryId) ?? '#999'} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-medium">{r.note || (c ? tree.labelFor(c.id) : 'Ohne Kategorie')}</span>
                     <span className="block truncate text-[13px] text-ink-3">{ruleSchedule(r.frequency, r.interval, r.startDate)}</span>

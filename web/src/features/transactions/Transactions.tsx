@@ -116,7 +116,7 @@ export function Transactions() {
                   </div>
                   <Tile className="p-2">
                     {s.items.map((t) => (
-                      <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} label={tree.byId.has(t.categoryId) ? tree.labelFor(t.categoryId) : undefined} payerName={data.names.get(t.paidBy)} showPayer={members.length > 1} onClick={() => openEdit(t)} />
+                      <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} label={tree.byId.has(t.categoryId) ? tree.labelFor(t.categoryId) : undefined} color={tree.colorFor(t.categoryId)} payerName={data.names.get(t.paidBy)} showPayer={members.length > 1} onClick={() => openEdit(t)} />
                     ))}
                   </Tile>
                 </section>

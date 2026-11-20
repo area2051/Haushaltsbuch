@@ -227,7 +227,7 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
                   selected ? 'bg-tile shadow-tile ring-2 ring-ink' : 'hover:bg-tile',
                 )}
               >
-                <CategoryIcon icon={c.icon} color={c.color} />
+                <CategoryIcon icon={c.icon} color={tree.colorFor(c.id) ?? c.color} />
                 <span lang="de" className="line-clamp-2 w-full hyphens-auto break-words text-center text-[12px] font-medium leading-tight text-ink-2">{c.name}</span>
               </button>
             )
@@ -237,7 +237,7 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
           // A fieldset only to disable all chips at once; the chip row names itself.
           <fieldset disabled={offline || (!amountReady && !editing)} className="mt-4 disabled:opacity-40">
             <p className="mb-2 px-1 text-[13px] font-medium text-ink-3">{selecting ? 'Unterkategorie' : 'Unterkategorie antippen zum Speichern'}</p>
-            <SubcategoryChips parentId={mainId} value={draft.categoryId} tree={tree} onChange={(id) => (selecting ? set({ categoryId: id }) : save(id))} />
+            <SubcategoryChips parentId={mainId} value={selecting ? draft.categoryId : ''} tree={tree} onChange={(id) => (selecting ? set({ categoryId: id }) : save(id))} />
           </fieldset>
         )}
       </section>

@@ -6,6 +6,8 @@ export type CategoryTree = {
   rootOf(id: string): string
   /** Direct children, by sortOrder then name. */
   childrenOf(id: string): Category[]
+  /** Display colour: always the main category's (undefined for an unknown id). */
+  colorFor(id: string): string | undefined
   /** „Haupt · Kind“, the plain name for a main category, „Unbekannt“ for an unknown id. */
   labelFor(id: string): string
   /** Not archived, and the parent (if any) not archived either. */
@@ -26,6 +28,7 @@ export function categoryTree(cats: Category[]): CategoryTree {
   return {
     byId,
     rootOf: (id) => parentOf(byId.get(id))?.id ?? id,
+    colorFor: (id) => byId.get(parentOf(byId.get(id))?.id ?? id)?.color,
     childrenOf: (id) => children.get(id) ?? [],
     labelFor(id) {
       const c = byId.get(id)

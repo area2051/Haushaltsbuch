@@ -56,3 +56,13 @@ test('renders nothing for a category without selectable children', () => {
   const { container } = render(<SubcategoryChips parentId="food" value="food" tree={tree} onChange={() => {}} />)
   expect(container).toBeEmptyDOMElement()
 })
+
+test('an archived current child stays visible and pressed, even without other children', () => {
+  const t = categoryTree([
+    cat('home', 'expense', { name: 'Wohnen' }),
+    cat('gas', 'expense', { name: 'Gas', parentId: 'home', archived: true }),
+  ])
+  render(<SubcategoryChips parentId="home" value="gas" tree={t} onChange={() => {}} />)
+  expect(screen.getAllByRole('button').map((c) => c.textContent)).toEqual(['Allgemein', 'Gas'])
+  expect(screen.getByRole('button', { name: 'Gas' })).toHaveAttribute('aria-pressed', 'true')
+})

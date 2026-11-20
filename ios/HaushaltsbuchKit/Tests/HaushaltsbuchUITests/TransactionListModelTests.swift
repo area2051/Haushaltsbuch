@@ -240,6 +240,9 @@ private struct EditFixture {
     #expect(RejectionText.german("foreign_key_violation") == "Verweis auf nicht vorhandene Daten.")
     #expect(RejectionText.german("unique_violation") == "Eintrag existiert bereits.")
     #expect(RejectionText.german("invalid_value") == "Ungültiger Wert.")
+    #expect(RejectionText.german("invalid_parent") == "Diese Zuordnung ist nicht möglich (nur eine Ebene, gleiche Art).")
+    #expect(RejectionText.german("category_has_children") == "Die Kategorie hat noch Unterkategorien.")
+    #expect(RejectionText.german("budget_on_subcategory") == "Budgets gibt es nur für Hauptkategorien.")
     #expect(RejectionText.german("amount_cents must be > 0") == "Vom Server abgelehnt.")
     #expect(RejectionText.german(nil) == "Vom Server abgelehnt.")
 }
