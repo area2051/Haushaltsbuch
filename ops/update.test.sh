@@ -21,14 +21,17 @@ make_stubs() {
 #!/bin/sh
 echo "git $*" >> "$T/calls"
 case "$*" in
-  "rev-parse --abbrev-ref HEAD") echo "$STUB_BRANCH" ;;
   "rev-parse HEAD") cat "$T/state/head" ;;
-  "rev-parse origin/"*) echo "$STUB_REMOTE" ;;
+  "rev-parse --short HEAD") cat "$T/state/head" ;;
+  "rev-parse v"*"^{commit}") echo "$STUB_TAG_COMMIT" ;;
+  "describe --tags --exact-match HEAD") [ -n "$STUB_DESCRIBE" ] || exit 128; echo "$STUB_DESCRIBE" ;;
+  "tag -l v[0-9]* --sort=-v:refname") printf '%b' "$STUB_TAGS" ;;
+  "remote get-url origin") echo "$STUB_REMOTE_URL" ;;
   "diff --quiet HEAD"*) exit "$STUB_DIRTY" ;;
   "fetch"*) exit 0 ;;
   "merge-base --is-ancestor"*) exit "$STUB_DIVERGED" ;;
-  "merge --ff-only"*) echo "$STUB_REMOTE" > "$T/state/head" ;;
-  "reset --keep "*) echo "$3" > "$T/state/head" ;;
+  "checkout --quiet --detach v"*) echo "$STUB_TAG_COMMIT" > "$T/state/head" ;;
+  "checkout --quiet --detach "*) echo "$4" > "$T/state/head" ;;
   "log"*) echo "abc123 neue Funktion" ;;
   *) echo "unerwarteter git-Aufruf: $*" >&2; exit 99 ;;
 esac
@@ -65,9 +68,10 @@ EOF
   : > "$T/calls"
 }
 
-# Standardwerte: alles ok, ein Commit neuer auf origin/main.
+# Standardwerte: alles ok, installiert ist aaa111 (kein Tag), das neueste Release v1.1.0 ist bbb222.
 defaults() {
-  STUB_BRANCH=main STUB_HEAD=aaa111 STUB_REMOTE=bbb222 STUB_DIRTY=0 STUB_DIVERGED=0
+  STUB_HEAD=aaa111 STUB_TAG_COMMIT=bbb222 STUB_TAGS="v1.1.0\nv1.0.0" STUB_DESCRIBE=""
+  STUB_REMOTE_URL=https://github.com/area2051/Haushaltsbuch.git STUB_DIRTY=0 STUB_DIVERGED=0
   STUB_BACKUP_FAIL=0 STUB_BUILD_FAIL=0 STUB_HEALTH=ok STUB_NO_API=0
   STUB_PROJECTS="haushaltsbuch
 "
@@ -75,8 +79,9 @@ defaults() {
 
 run_update() {
   make_stubs
-  out=$(cd "$T" && env PATH="$T/bin:$PATH" T="$T" STUB_BRANCH="$STUB_BRANCH" STUB_HEAD="$STUB_HEAD" \
-    STUB_REMOTE="$STUB_REMOTE" STUB_DIRTY="$STUB_DIRTY" STUB_DIVERGED="$STUB_DIVERGED" \
+  out=$(cd "$T" && env PATH="$T/bin:$PATH" T="$T" STUB_HEAD="$STUB_HEAD" \
+    STUB_TAG_COMMIT="$STUB_TAG_COMMIT" STUB_TAGS="$STUB_TAGS" STUB_DESCRIBE="$STUB_DESCRIBE" \
+    STUB_REMOTE_URL="$STUB_REMOTE_URL" STUB_DIRTY="$STUB_DIRTY" STUB_DIVERGED="$STUB_DIVERGED" \
     STUB_BACKUP_FAIL="$STUB_BACKUP_FAIL" STUB_BUILD_FAIL="$STUB_BUILD_FAIL" STUB_HEALTH="$STUB_HEALTH" \
     STUB_PROJECTS="$STUB_PROJECTS" STUB_NO_API="$STUB_NO_API" HB_HEALTH_TIMEOUT=6 COMPOSE_PROJECT_NAME="${FORCE_PROJECT:-}" \
     sh "$T/repo/ops/update.sh" "$@" 2>&1)
@@ -115,28 +120,68 @@ run_case() {
 # --- Fälle ---------------------------------------------------------------------------
 
 already_current_does_nothing() {
-  STUB_REMOTE=aaa111
+  STUB_TAGS="v1.0.0" STUB_TAG_COMMIT=aaa111
   run_update
   assert_exit 0
-  assert_output "Bereits aktuell"
+  assert_output "Bereits aktuell (v1.0.0)"
   assert_not_called "exec -T backup"
   assert_not_called "up -d"
 }
 
 force_rebuilds_even_when_current() {
-  STUB_REMOTE=aaa111
+  STUB_TAGS="v1.0.0" STUB_TAG_COMMIT=aaa111
   run_update --force
   assert_exit 0
   assert_called "up -d --build api"
 }
 
-wrong_branch_aborts() {
-  STUB_BRANCH=feat/web-app
+no_tags_aborts() {
+  STUB_TAGS=""
   run_update
   assert_exit 1
-  assert_output "git switch main"
-  assert_not_called "fetch"
+  assert_output "Release"
+  assert_not_called "exec -T backup"
   assert_not_called "up -d"
+}
+
+picks_highest_tag() {
+  STUB_TAGS="v1.10.0\nv1.9.0"
+  run_update
+  assert_exit 0
+  assert_called "checkout --quiet --detach v1.10.0"
+  assert_not_called "detach v1.9.0"
+}
+
+older_release_aborts_even_with_force() {
+  STUB_DIVERGED=1
+  run_update --force
+  assert_exit 1
+  assert_output "neuer als"
+  assert_not_called "exec -T backup"
+  assert_not_called "checkout"
+  assert_not_called "up -d"
+}
+
+release_url_from_ssh_remote() {
+  STUB_REMOTE_URL=git@github.com:area2051/Haushaltsbuch.git
+  run_update
+  assert_exit 0
+  assert_output "https://github.com/area2051/Haushaltsbuch/releases/tag/v1.1.0"
+}
+
+no_release_url_for_other_remote() {
+  STUB_REMOTE_URL=https://example.org/foo/bar.git
+  run_update
+  assert_exit 0
+  assert_output "v1.1.0"
+  case "$out" in *releases/tag*) fail "Release-URL bei Nicht-GitHub-Remote";; esac
+}
+
+old_version_shown_from_tag() {
+  STUB_DESCRIBE=v1.0.0
+  run_update
+  assert_exit 0
+  assert_output "v1.0.0 -> v1.1.0"
 }
 
 local_changes_abort() {
@@ -152,7 +197,7 @@ diverged_history_aborts_before_backup() {
   run_update
   assert_exit 1
   assert_not_called "exec -T backup"
-  assert_not_called "merge --ff-only"
+  assert_not_called "checkout"
 }
 
 unknown_project_aborts() {
@@ -185,13 +230,14 @@ success_runs_steps_in_order() {
   assert_exit 0
   assert_called "docker compose -f docker-compose.yml -p haushaltsbuch"
   assert_order "exec -T backup sh /backup.sh" "tag sha256:old hb-api:previous"
-  assert_order "tag sha256:old hb-api:previous" "merge --ff-only"
-  assert_order "merge --ff-only" "up -d --build api"
+  assert_order "tag sha256:old hb-api:previous" "checkout --quiet --detach v1.1.0"
+  assert_order "checkout --quiet --detach v1.1.0" "up -d --build api"
   assert_order "up -d --build api" "curl"
   assert_called "http://127.0.0.1:3999/health"
   assert_not_called "up -d --no-build"
   assert_output "aaa111"
-  assert_output "bbb222"
+  assert_output "v1.1.0"
+  assert_output "https://github.com/area2051/Haushaltsbuch/releases/tag/v1.1.0"
   assert_output "abc123 neue Funktion"
 }
 
@@ -200,7 +246,7 @@ backup_failure_stops_before_pull() {
   run_update
   assert_exit 1
   assert_output "Backup"
-  assert_not_called "merge --ff-only"
+  assert_not_called "checkout"
   assert_not_called "up -d"
 }
 
@@ -210,7 +256,7 @@ build_failure_rolls_back() {
   assert_exit 1
   assert_called "tag hb-api:previous hb-api"
   assert_called "up -d --no-build api"
-  assert_called "reset --keep aaa111"
+  assert_called "checkout --quiet --detach aaa111"
   assert_output "vorherige"
 }
 
@@ -219,7 +265,7 @@ health_failure_rolls_back() {
   run_update
   assert_exit 1
   assert_order "up -d --build api" "up -d --no-build api"
-  assert_called "reset --keep aaa111"
+  assert_called "checkout --quiet --detach aaa111"
   assert_output "Backup"
 }
 
@@ -242,11 +288,13 @@ build_failure_without_previous_image_still_resets_git() {
   STUB_NO_API=1 STUB_BUILD_FAIL=1
   run_update
   assert_exit 1
-  assert_called "reset --keep aaa111"
+  assert_called "checkout --quiet --detach aaa111"
   assert_not_called "up -d --no-build"
 }
 
-for c in no_running_api_updates_without_rollback_tag build_failure_without_previous_image_still_resets_git already_current_does_nothing force_rebuilds_even_when_current wrong_branch_aborts \
+for c in no_running_api_updates_without_rollback_tag build_failure_without_previous_image_still_resets_git already_current_does_nothing force_rebuilds_even_when_current \
+  no_tags_aborts picks_highest_tag older_release_aborts_even_with_force release_url_from_ssh_remote \
+  no_release_url_for_other_remote old_version_shown_from_tag \
   local_changes_abort diverged_history_aborts_before_backup unknown_project_aborts \
   ambiguous_project_aborts project_name_from_env_skips_detection success_runs_steps_in_order \
   backup_failure_stops_before_pull build_failure_rolls_back health_failure_rolls_back \
