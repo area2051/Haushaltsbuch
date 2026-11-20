@@ -48,20 +48,26 @@ Der Build-Kontext ist das Repo-Wurzelverzeichnis, weil das Image auch die Web-Ap
 
 ## Update
 
-Auf dem NAS per SSH im Repo-Ordner (Git-Clone auf Branch `main`):
+Auf dem NAS per SSH im Repo-Ordner (Git-Clone):
 
 ```bash
 sh ops/update.sh
 ```
 
-Das Skript holt `origin/main` und hört mit „Bereits aktuell“ auf, wenn es nichts Neues gibt. Sonst zieht es zuerst ein Backup (wie der `backup`-Container), spielt den neuen Stand per `git merge --ff-only` ein, baut `api` neu und wartet bis zu 90 s auf `/health`. Schlägt Build oder Health-Check fehl, startet es das vorherige Image wieder und setzt den Git-Stand auf den alten Commit zurück; das Backup von eben bleibt für den Notfall liegen (Migrationen können schon gelaufen sein). `--force` baut auch ohne neuen Commit neu.
+Das Skript holt die Tags von GitHub und nimmt das **neueste Release** (höchster Tag `vX.Y.Z`). Steht der Clone schon auf diesem Stand, hört es mit „Bereits aktuell“ auf. Sonst zieht es zuerst ein Backup (wie der `backup`-Container), checkt den Tag aus, baut `api` neu und wartet bis zu 90 s auf `/health`. Am Ende zeigt es alt → neu (z. B. `v1.0.0 -> v1.1.0`), den Link zum GitHub-Release und die enthaltenen Commits. Schlägt Build oder Health-Check fehl, startet es das vorherige Image wieder und setzt den Git-Stand auf den alten Commit zurück; das Backup von eben bleibt für den Notfall liegen (Migrationen können schon gelaufen sein). `--force` baut auch ohne neueres Release neu.
 
-Es bricht vorher ab, wenn der Clone nicht auf `main` steht (`git switch main`), versionierte Dateien lokal geändert sind oder der Compose-Projektname des laufenden Stacks nicht eindeutig ist (dann `COMPOSE_PROJECT_NAME=<name> sh ops/update.sh`; den Namen zeigt `docker compose ls`). Es nutzt immer `docker-compose.yml` aus dem Repo, auch wenn UGOS daneben ein eigenes `docker-compose.yaml` angelegt hat.
+Nach einem Update steht der Clone im „detached HEAD“ auf dem Release-Tag. Das ist gewollt und kein Fehler. Das Skript wechselt nie auf einen Stand, der nicht neuer als der installierte ist (auch nicht mit `--force`), weil die Migrationen des laufenden Codes neuer sein können.
 
-Von Hand geht es weiterhin so:
+Es bricht vorher ab, wenn es noch keinen Release-Tag gibt (dann zuerst ein Release anlegen, siehe unten), versionierte Dateien lokal geändert sind oder der Compose-Projektname des laufenden Stacks nicht eindeutig ist (dann `COMPOSE_PROJECT_NAME=<name> sh ops/update.sh`; den Namen zeigt `docker compose ls`). Es nutzt immer `docker-compose.yml` aus dem Repo, auch wenn UGOS daneben ein eigenes `docker-compose.yaml` angelegt hat.
+
+**Erster Umstieg auf Releases:** Der Clone steht noch auf `main`. Einmal `git pull` ausführen (damit `ops/update.sh` aktuell ist), dann das Release `v1.0.0` anlegen (siehe „Release anlegen“) und `sh ops/update.sh` starten. Das Skript meldet „Bereits aktuell“ oder spielt den Release-Stand ein.
+
+Die laufende Version steht in der Web-App unter Mehr → App („Version X.Y.Z“) und im Feld `version` von `/health`.
+
+Von Hand geht es weiterhin so (`vX.Y.Z` durch das gewünschte Release ersetzen):
 
 ```bash
-git pull
+git fetch --tags && git checkout --detach vX.Y.Z
 docker compose -f docker-compose.yml up -d --build
 ```
 
@@ -71,6 +77,18 @@ Migrationen laufen beim Start der API automatisch. Daten bleiben in `${DATA_DIR}
 - Neuer Server, alte iOS-App: funktioniert. Die alte App ignoriert neue Felder; eine vierteljährliche Regel erscheint dort als „monatlich“, bleibt beim Speichern aber vierteljährlich (der Server behält das Intervall, wenn die App es nicht mitschickt).
 - Neue iOS-App, alter Server: **funktioniert nicht** – die neue App erwartet z. B. das Feld `interval` und kann die Sync-Antwort sonst nicht lesen. Den Server also immer zuerst aktualisieren.
 - Nach dem Update holt die neue iOS-App einmalig alle Daten neu (neuer Sync-Cursor), damit Felder, die die alte App verworfen hat, wieder stimmen. Ungesendete Änderungen bleiben dabei erhalten.
+
+## Release anlegen
+
+Ein Update auf dem NAS installiert nur Releases, keinen unfertigen Stand von `main`. Ein Release entsteht so:
+
+1. Änderungen per Pull Request nach `main` mergen (CI muss grün sein).
+2. Auf GitHub: Actions → Release → Run workflow (Branch `main`), Versionssprung wählen:
+   - `patch`: Fehlerbehebung (1.0.0 → 1.0.1)
+   - `minor`: neue Funktion (1.0.0 → 1.1.0)
+   - `major`: großer Umbau (1.0.0 → 2.0.0)
+3. Der Workflow erhöht die Version in `server/` und `web/`, committet `chore(release): vX.Y.Z` auf `main`, setzt den Tag `vX.Y.Z` und legt das GitHub-Release mit automatisch erzeugten Notizen an.
+4. Auf dem NAS `sh ops/update.sh` ausführen.
 
 ## Backup
 
