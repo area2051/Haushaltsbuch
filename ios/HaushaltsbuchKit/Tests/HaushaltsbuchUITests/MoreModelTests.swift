@@ -36,7 +36,7 @@ private func day(_ y: Int, _ m: Int, _ d: Int) -> CalendarDay { CalendarDay(year
     #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == [url.lastPathComponent])
     #expect(url.lastPathComponent == "Haushaltsbuch_2026-11-01_2026-11-30.csv")
     let data = try Data(contentsOf: url)
-    #expect(data == CSVExport.make(txs, categories: [cat.id: cat], members: [anna: "Anna"],
+    #expect(data == CSVExport.make(txs, tree: CategoryTree([cat]), members: [anna: "Anna"],
                                    from: range.from, to: range.to))
     #expect(ExportModel.rowCount(txs: txs, range: range) == 1)
 }

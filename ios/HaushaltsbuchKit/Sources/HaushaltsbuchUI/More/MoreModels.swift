@@ -53,8 +53,7 @@ enum ExportModel {
     /// `txs` sind bereits ohne gelöschte Buchungen.
     static func writeFile(txs: [TxValue], categories: [CategoryValue], members: [UUID: String],
                           range: ExportRange, directory: URL = ExportModel.directory) throws -> URL {
-        let byId = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let data = CSVExport.make(txs, categories: byId, members: members, from: range.from, to: range.to)
+        let data = CSVExport.make(txs, tree: CategoryTree(categories), members: members, from: range.from, to: range.to)
         // Nur die aktuelle Datei behalten (keine alten Exporte im tmp-Ordner).
         removeTemporaryFiles(in: directory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -104,10 +104,26 @@ public enum Analytics {
     }
 
     /// Ausgaben des Monats je Kategorie, absteigend nach Betrag (Gleichstand: UUID-String für Stabilität).
-    public static func expensesByCategory(_ txs: [TxValue], month: MonthKey) -> [CategoryTotal] {
+    /// Mit `rootOf` je Hauptkategorie (Unterkategorien zählen für ihre Hauptkategorie).
+    public static func expensesByCategory(_ txs: [TxValue], month: MonthKey,
+                                          rootOf: (UUID) -> UUID = { $0 }) -> [CategoryTotal] {
+        sortedTotals(expenses(txs, month: month) { rootOf($0.categoryId) })
+    }
+
+    /// Ausgaben des Monats einer Hauptkategorie: direkt auf ihr gebucht (`parentId`) und je Unterkategorie.
+    public static func subcategoryBreakdown(_ txs: [TxValue], month: MonthKey, parentId: UUID,
+                                            tree: CategoryTree) -> [CategoryTotal] {
+        sortedTotals(expenses(txs.filter { tree.rootOf($0.categoryId) == parentId }, month: month) { $0.categoryId })
+    }
+
+    private static func expenses(_ txs: [TxValue], month: MonthKey, key: (TxValue) -> UUID) -> [UUID: Int] {
         var sums: [UUID: Int] = [:]
-        for t in txs where t.kind == .expense && month.contains(t.day) { sums[t.categoryId, default: 0] += t.amountCents }
-        return sums.map { CategoryTotal(categoryId: $0.key, cents: $0.value) }
+        for t in txs where t.kind == .expense && month.contains(t.day) { sums[key(t), default: 0] += t.amountCents }
+        return sums
+    }
+
+    private static func sortedTotals(_ sums: [UUID: Int]) -> [CategoryTotal] {
+        sums.map { CategoryTotal(categoryId: $0.key, cents: $0.value) }
             .sorted { ($0.cents, $1.categoryId.uuidString) > ($1.cents, $0.categoryId.uuidString) }
     }
 
@@ -119,10 +135,11 @@ public enum Analytics {
             .sorted { ($0.cents, $1.userId.uuidString) > ($1.cents, $0.userId.uuidString) }
     }
 
-    /// Fortschritt je Budget (Reihenfolge der Eingabe) anhand der Ausgaben des Monats.
-    public static func budgetProgress(_ budgets: [BudgetValue], txs: [TxValue], month: MonthKey) -> [BudgetProgress] {
-        var spent: [UUID: Int] = [:]
-        for t in txs where t.kind == .expense && month.contains(t.day) { spent[t.categoryId, default: 0] += t.amountCents }
+    /// Fortschritt je Budget (Reihenfolge der Eingabe) anhand der Ausgaben des Monats; mit `rootOf`
+    /// zählen Unterkategorien für das Budget ihrer Hauptkategorie.
+    public static func budgetProgress(_ budgets: [BudgetValue], txs: [TxValue], month: MonthKey,
+                                      rootOf: (UUID) -> UUID = { $0 }) -> [BudgetProgress] {
+        let spent = expenses(txs, month: month) { rootOf($0.categoryId) }
         return budgets.map {
             BudgetProgress(categoryId: $0.categoryId, spentCents: spent[$0.categoryId] ?? 0, limitCents: $0.monthlyLimitCents)
         }

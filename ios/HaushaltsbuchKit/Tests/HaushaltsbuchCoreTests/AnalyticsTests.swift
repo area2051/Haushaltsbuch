@@ -102,3 +102,47 @@ private func cat(_ sort: Int, kind: Kind = .expense, archived: Bool = false) -> 
     let ri = Analytics.rankCategories([e1, e2, arch, inc], txs: txs, kind: .income, today: day("2026-11-01"))
     #expect(ri.map(\.id) == [inc.id])
 }
+
+// MARK: Unterkategorien
+
+private enum Sub {
+    static let home = UUID(), power = UUID(), rent = UUID()
+    static let tree = CategoryTree([
+        CategoryValue(id: home, name: "Wohnen", icon: "house", color: "#000000", kind: .expense, sortOrder: 0, archived: false),
+        CategoryValue(id: power, name: "Strom", icon: "bolt", color: "#000000", kind: .expense, sortOrder: 0, archived: false,
+                      parentId: home),
+        CategoryValue(id: rent, name: "Miete", icon: "house", color: "#000000", kind: .expense, sortOrder: 1, archived: false,
+                      parentId: home),
+    ])
+    static let txs = [
+        tx(100, cat: home, day: "2026-11-02"),
+        tx(300, cat: power, day: "2026-11-03"),
+        tx(200, cat: rent, day: "2026-11-04"),
+        tx(50, cat: rent, day: "2026-10-04"),
+    ]
+}
+
+@Test func rollsSubcategoryExpensesIntoTheirParent() {
+    #expect(Analytics.expensesByCategory(Sub.txs, month: nov, rootOf: Sub.tree.rootOf)
+            == [CategoryTotal(categoryId: Sub.home, cents: 600)])
+}
+
+@Test func budgetCountsSubcategorySpending() {
+    let p = Analytics.budgetProgress([BudgetValue(categoryId: Sub.home, monthlyLimitCents: 1000)], txs: Sub.txs,
+                                     month: nov, rootOf: Sub.tree.rootOf)
+    #expect(p[0].spentCents == 600)
+}
+
+@Test func breakdownListsGeneralAndEachChild() {
+    #expect(Analytics.subcategoryBreakdown(Sub.txs, month: nov, parentId: Sub.home, tree: Sub.tree) == [
+        CategoryTotal(categoryId: Sub.power, cents: 300),
+        CategoryTotal(categoryId: Sub.rent, cents: 200),
+        CategoryTotal(categoryId: Sub.home, cents: 100),
+    ])
+}
+
+@Test func breakdownIgnoresOtherParents() {
+    let other = UUID()
+    let txs = Sub.txs + [tx(999, cat: other, day: "2026-11-05")]
+    #expect(Analytics.subcategoryBreakdown(txs, month: nov, parentId: Sub.home, tree: Sub.tree).map(\.cents) == [300, 200, 100])
+}
