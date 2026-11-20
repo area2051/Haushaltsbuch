@@ -671,6 +671,27 @@ describe('POST /sync', () => {
       expect(r.changes.categories.map((c) => c.id).sort()).toEqual([parent.id, child.id].sort())
       for (const c of r.changes.categories) expect(c).toMatchObject({ deleted: false, archived: true })
     })
+
+    test.each([
+      ['moved under another category', (parent: ReturnType<typeof category>, other: ReturnType<typeof category>) => ({ ...parent, parentId: other.id })],
+      ['changed kind', (parent: ReturnType<typeof category>) => ({ ...parent, kind: 'income' as const })],
+    ])('reviving a subcategory whose parent was %s brings it back as top-level', async (_label, changeParent) => {
+      const { admin, token } = await start()
+      const { parent, child } = await withParentAndChild(token)
+      const other = category({ name: 'Haushalt' })
+      const setup = await sync(token, 0, { categories: [other, { ...child, deleted: true }] })
+      expect(setup.rejected).toEqual([])
+      const changed = await sync(token, 0, { categories: [changeParent(parent, other)] })
+      expect(changed.rejected).toEqual([])
+
+      const r = await sync(token, changed.currentVersion, {
+        transactions: [txn({ categoryId: child.id, paidBy: admin.id })],
+      })
+      expect(r.rejected).toEqual([])
+      expect(r.changes.categories).toEqual([
+        expect.objectContaining({ id: child.id, deleted: false, archived: true, parentId: null }),
+      ])
+    })
   })
 
   test('new recurring rule gets nextDueDate = startDate', async () => {

@@ -99,13 +99,27 @@ class Collector {
  * offline) is restored as archived, with a new version so every device sees it again.
  */
 async function reviveCategory(sp: Tx, categoryId: string): Promise<void> {
-  const [revived] = await sp
-    .update(categories)
-    .set({ deleted: false, archived: true, ...bump() })
+  const [cat] = await sp
+    .select({ parentId: categories.parentId, kind: categories.kind })
+    .from(categories)
     .where(and(eq(categories.id, categoryId), eq(categories.deleted, true)))
-    .returning({ parentId: categories.parentId })
+  if (!cat) return
+  let parentId = cat.parentId
+  if (parentId !== null) {
+    // The tree may have changed while this subcategory was deleted (its children don't block
+    // that): if its parent is no longer a valid parent, revive it as top-level instead.
+    const [parent] = await sp
+      .select({ parentId: categories.parentId, kind: categories.kind })
+      .from(categories)
+      .where(eq(categories.id, parentId))
+    if (!parent || parent.parentId !== null || parent.kind !== cat.kind) parentId = null
+  }
+  await sp
+    .update(categories)
+    .set({ deleted: false, archived: true, parentId, ...bump() })
+    .where(eq(categories.id, categoryId))
   // A revived subcategory needs its parent back too (one level, so this recurses at most once).
-  if (revived?.parentId) await reviveCategory(sp, revived.parentId)
+  if (parentId !== null) await reviveCategory(sp, parentId)
 }
 
 /**
