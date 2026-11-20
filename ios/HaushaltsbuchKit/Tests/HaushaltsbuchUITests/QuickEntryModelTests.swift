@@ -155,3 +155,74 @@ private struct QuickEntryFixture {
     m.detailsExpanded = false
     #expect(m.repeatRhythm == nil)
 }
+
+// MARK: Unterkategorien
+
+@MainActor
+private struct SubFixture {
+    let base: QuickEntryFixture
+    let power: CategoryEntity
+    let gas: CategoryEntity
+
+    init() throws {
+        base = try QuickEntryFixture()
+        power = try base.repository.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#000000", kind: .expense,
+                                                               parentId: base.rent.id))
+        gas = try base.repository.saveCategory(CategoryDraft(name: "Gas", icon: "flame", color: "#000000", kind: .expense,
+                                                             parentId: base.rent.id))
+        gas.archived = true
+        try base.container.mainContext.save()
+    }
+}
+
+@MainActor @Test func gridShowsOnlyMainCategoriesRankedByUseIncludingChildren() throws {
+    let f = try SubFixture()
+    #expect(f.base.model().categories.map(\.name) == ["Lebensmittel", "Wohnen"])
+    try f.base.repository.addTransaction(amountCents: 500, kind: .expense, categoryId: f.power.id,
+                                         day: QuickEntryFixture.today, paidBy: QuickEntryFixture.me, note: nil)
+    #expect(f.base.model().categories.map(\.name) == ["Wohnen", "Lebensmittel"])
+}
+
+@MainActor @Test func booksOnSubcategory() throws {
+    let f = try SubFixture()
+    let m = f.base.model()
+    for d in [4, 2] { m.amount.append(digit: d) }
+    // Hauptkategorie mit Unterkategorien: Tipp zeigt die Chips, speichert noch nicht.
+    #expect(try m.tapCategory(f.base.rent.id) == false)
+    #expect(f.base.repository.activeTransactions().isEmpty)
+    #expect(m.chipParentId == f.base.rent.id)
+    #expect(m.chipOptions.map(\.name) == ["Allgemein", "Strom"])   // archiviertes Gas fehlt
+    try m.save(category: f.power.id)
+    let tx = try #require(f.base.repository.activeTransactions().only)
+    #expect(tx.amountCents == 42 && tx.categoryId == f.power.id)
+}
+
+@MainActor @Test func allgemeinChipBooksOnTheMainCategory() throws {
+    let f = try SubFixture()
+    let m = f.base.model()
+    m.amount.append(digit: 9)
+    _ = try m.tapCategory(f.base.rent.id)
+    let general = try #require(m.chipOptions.first)
+    #expect(general.id == f.base.rent.id)
+    try m.save(category: general.id)
+    #expect(f.base.repository.activeTransactions().only?.categoryId == f.base.rent.id)
+}
+
+@MainActor @Test func categoryWithoutSelectableChildrenSavesOnTap() throws {
+    let f = try SubFixture()
+    let m = f.base.model()
+    m.amount.append(digit: 3)
+    #expect(try m.tapCategory(f.base.food.id) == true)
+    #expect(f.base.repository.activeTransactions().only?.categoryId == f.base.food.id)
+    #expect(m.chipParentId == nil)
+}
+
+@MainActor @Test func switchingKindHidesTheChips() throws {
+    let f = try SubFixture()
+    let m = f.base.model()
+    m.amount.append(digit: 3)
+    _ = try m.tapCategory(f.base.rent.id)
+    m.kind = .income
+    #expect(m.chipParentId == nil)
+    #expect(m.chipOptions.isEmpty)
+}

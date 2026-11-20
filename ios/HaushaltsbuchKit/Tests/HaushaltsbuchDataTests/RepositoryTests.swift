@@ -300,3 +300,70 @@ private struct Fixture {
     let left = try ctx.fetch(FetchDescriptor<BudgetEntity>()).filter { $0.categoryId == f.cat }
     #expect(left.count == 1)
 }
+
+
+@MainActor @Test func saveCategoryWithParentInheritsColorAndKind() throws {
+    let f = try Fixture()
+    let parent = try f.repo.saveCategory(CategoryDraft(name: "Wohnen", icon: "house", color: "#AA0000", kind: .income))
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#00FF00", kind: .expense,
+                                                      parentId: parent.id))
+    #expect(child.parentId == parent.id)
+    #expect(child.color == "#AA0000")
+    #expect(child.kind == "income")
+    #expect(child.isDirty)
+}
+
+@MainActor @Test func saveCategoryCanClearParent() throws {
+    let f = try Fixture()
+    let parent = try f.makeCategory("Wohnen")
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#00FF00", kind: .expense,
+                                                      parentId: parent.id))
+    try f.repo.saveCategory(CategoryDraft(id: child.id, name: "Strom", icon: "bolt", color: "#00FF00",
+                                          kind: .expense, parentId: nil))
+    #expect(child.parentId == nil)
+}
+
+@MainActor @Test func removeCategoryWithChildrenThrows() throws {
+    let f = try Fixture()
+    let parent = try f.makeCategory("Wohnen")
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#00FF00", kind: .expense,
+                                                      parentId: parent.id))
+    #expect(throws: RepositoryError.hasChildren) { try f.repo.removeCategory(parent) }
+    #expect(!parent.deleted && !parent.archived)
+    // gelöschte Kinder zählen nicht
+    try f.repo.removeCategory(child)
+    try f.repo.removeCategory(parent)
+    #expect(parent.deleted)
+}
+
+@MainActor @Test func newCategoriesGoLastAmongTheirSiblings() throws {
+    let f = try Fixture()
+    let home = try f.makeCategory("Wohnen")
+    let a = try f.repo.saveCategory(CategoryDraft(name: "A", icon: "bolt", color: "#000000", kind: .expense, parentId: home.id))
+    let b = try f.repo.saveCategory(CategoryDraft(name: "B", icon: "bolt", color: "#000000", kind: .expense, parentId: home.id))
+    #expect(a.sortOrder == 0 && b.sortOrder == 1)             // Zählung je Hauptkategorie
+    let top = try f.makeCategory("Auto")
+    #expect(top.sortOrder == home.sortOrder + 1)             // Unterkategorien zählen nicht mit
+}
+
+@MainActor @Test func reparentingTakesTheParentColorAndGoesLast() throws {
+    let f = try Fixture()
+    let home = try f.repo.saveCategory(CategoryDraft(name: "Wohnen", icon: "house", color: "#AA0000", kind: .expense))
+    let kid = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#000000", kind: .expense, parentId: home.id))
+    let food = try f.repo.saveCategory(CategoryDraft(name: "Essen", icon: "cart", color: "#00FF00", kind: .expense))
+    try f.repo.saveCategory(CategoryDraft(id: food.id, name: "Essen", icon: "cart", color: "#00FF00", kind: .expense,
+                                          parentId: home.id))
+    #expect(food.color == "#AA0000")
+    #expect(food.sortOrder == kid.sortOrder + 1)
+
+    let topBefore = try f.makeCategory("Auto").sortOrder
+    try f.repo.saveCategory(CategoryDraft(id: kid.id, name: "Strom", icon: "bolt", color: kid.color, kind: .expense, parentId: nil))
+    #expect(kid.sortOrder == topBefore + 1)
+    #expect(kid.color == "#AA0000")
+
+    // Ohne Wechsel der Hauptkategorie bleibt die Position.
+    let order = food.sortOrder
+    try f.repo.saveCategory(CategoryDraft(id: food.id, name: "Essen 2", icon: "cart", color: "#AA0000", kind: .expense,
+                                          parentId: home.id))
+    #expect(food.sortOrder == order)
+}

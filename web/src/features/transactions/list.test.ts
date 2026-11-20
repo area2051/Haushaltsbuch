@@ -1,10 +1,14 @@
 import { expect, test } from 'vitest'
+import { categoryTree } from '../../domain/categoryTree'
 import { cat, tx } from '../../test/fixtures'
 import { emptyFilter, filterActive, sections } from './list'
 
-const cats = new Map([
-  ['food', cat('food', 'expense', { name: 'Lebensmittel' })],
-  ['cafe', cat('cafe', 'expense', { name: 'Café' })],
+const cats = categoryTree([
+  cat('food', 'expense', { name: 'Lebensmittel' }),
+  cat('cafe', 'expense', { name: 'Café' }),
+  cat('home', 'expense', { name: 'Wohnen' }),
+  cat('power', 'expense', { name: 'Strom', parentId: 'home' }),
+  cat('rent', 'expense', { name: 'Miete', parentId: 'home' }),
 ])
 
 const amounts = (s: ReturnType<typeof sections>) => s.map((x) => [x.day, x.items.map((t) => t.amountCents)])
@@ -52,4 +56,17 @@ test('filterActive ignores search and month', () => {
   expect(filterActive(emptyFilter)).toBe(false)
   expect(filterActive({ ...emptyFilter, search: 'x', month: '2026-11' })).toBe(false)
   expect(filterActive({ ...emptyFilter, paidBy: 'u1' })).toBe(true)
+})
+
+test('category filter: parent matches its children, a child only itself', () => {
+  const txs = [tx(1, '2026-11-02', { categoryId: 'home' }), tx(2, '2026-11-02', { categoryId: 'power' }), tx(3, '2026-11-02', { categoryId: 'rent' }), tx(4, '2026-11-02', { categoryId: 'food' })]
+  const only = (id: string) => sections(txs, { ...emptyFilter, categoryId: id }, cats).flatMap((s) => s.items.map((t) => t.amountCents)).sort()
+  expect(only('home')).toEqual([1, 2, 3])
+  expect(only('power')).toEqual([2])
+})
+
+test('search matches the label of a subcategory booking', () => {
+  const txs = [tx(2, '2026-11-02', { categoryId: 'power' }), tx(4, '2026-11-02', { categoryId: 'food' })]
+  const hits = sections(txs, { ...emptyFilter, search: 'strom' }, cats).flatMap((s) => s.items.map((t) => t.amountCents))
+  expect(hits).toEqual([2])
 })

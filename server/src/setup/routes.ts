@@ -67,9 +67,22 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
           .insert(users)
           .values({ username, displayName, passwordHash, isAdmin: true })
           .returning()
-        await tx
+        const parents = await tx
           .insert(categories)
-          .values(DEFAULT_CATEGORIES.map((c, i) => ({ ...c, sortOrder: i })))
+          .values(DEFAULT_CATEGORIES.map(({ children: _children, ...c }, i) => ({ ...c, sortOrder: i })))
+          .returning({ id: categories.id, sortOrder: categories.sortOrder })
+        const parentIdByOrder = new Map(parents.map((p) => [p.sortOrder, p.id]))
+        await tx.insert(categories).values(
+          DEFAULT_CATEGORIES.flatMap((c, i) =>
+            (c.children ?? []).map((child, j) => ({
+              ...child,
+              color: c.color,
+              kind: c.kind,
+              sortOrder: j,
+              parentId: parentIdByOrder.get(i)!,
+            })),
+          ),
+        )
         return created!
       })
       return reply.status(201).send({

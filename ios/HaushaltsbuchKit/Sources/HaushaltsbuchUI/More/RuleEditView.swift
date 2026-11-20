@@ -74,8 +74,14 @@ private struct RuleForm: View {
                 .pickerStyle(.segmented)
 
                 CategoryGridView(categories: model.categories, enabled: true,
-                                 selectedId: model.categoryId) { category in
-                    model.categoryId = category.id
+                                 selectedId: model.mainId) { category in
+                    model.selectMain(category.id)
+                }
+
+                if !model.chipOptions.isEmpty {
+                    SubcategoryChipsView(options: model.chipOptions, selectedId: model.categoryId) {
+                        model.categoryId = $0
+                    }
                 }
 
                 VStack(spacing: 12) {

@@ -70,7 +70,7 @@ public struct UserDefaultsCursorStore: SyncCursorStore {
     /// Erhöhen, wenn das lokale Datenmodell Felder hinzubekommt, die ältere App-Versionen beim Sync
     /// verworfen haben: Ein neuer Schlüssel startet bei 0, der erste Sync holt dann alles neu.
     /// 2: `RecurringRuleEntity.interval`.
-    static let dataModelGeneration = 2
+    static let dataModelGeneration = 3
 
     public static func key(serverURL: URL, userId: UUID) -> String {
         "sync.lastVersion.v\(dataModelGeneration).\(serverURL.absoluteString).\(userId.uuidString.lowercased())"

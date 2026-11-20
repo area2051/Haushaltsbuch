@@ -53,8 +53,7 @@ enum ExportModel {
     /// `txs` sind bereits ohne gelöschte Buchungen.
     static func writeFile(txs: [TxValue], categories: [CategoryValue], members: [UUID: String],
                           range: ExportRange, directory: URL = ExportModel.directory) throws -> URL {
-        let byId = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let data = CSVExport.make(txs, categories: byId, members: members, from: range.from, to: range.to)
+        let data = CSVExport.make(txs, tree: CategoryTree(categories), members: members, from: range.from, to: range.to)
         // Nur die aktuelle Datei behalten (keine alten Exporte im tmp-Ordner).
         removeTemporaryFiles(in: directory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -109,6 +108,82 @@ enum CategoryForm {
 
     static func removalMessage(archived: Bool) -> String {
         archived ? "Kategorie archiviert – sie wird in alten Buchungen weiter angezeigt." : "Kategorie gelöscht."
+    }
+
+    /// Hauptkategorie mit (nicht gelöschten) Unterkategorien: Entfernen gesperrt (Server: `category_has_children`).
+    static let removalBlockedText = "Erst Unterkategorien entfernen"
+
+    /// `all` ohne gelöschte Kategorien.
+    static func hasChildren(_ id: UUID, in all: [CategoryValue]) -> Bool {
+        all.contains { $0.parentId == id }
+    }
+
+    /// Mögliche Hauptkategorien für „Gehört zu“: aktive Hauptkategorien der Art außer `c`; keine, wenn
+    /// `c` selbst Unterkategorien hat (nur eine Ebene). `all` ohne gelöschte Kategorien.
+    static func parentOptions(for c: CategoryValue?, all: [CategoryValue], kind: Kind) -> [CategoryValue] {
+        if let c, hasChildren(c.id, in: all) { return [] }
+        return all.filter { $0.parentId == nil && $0.kind == kind && !$0.archived && $0.id != c?.id }
+            .sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
+    }
+
+    /// Hinweis vor dem Speichern, wenn `c` mit Budget Unterkategorie von `parent` wird (der Server hängt
+    /// das Budget um oder löscht es). `budgets` nur nicht gelöschte.
+    static func budgetHint(for c: CategoryValue, parent: CategoryValue?, budgets: [BudgetValue]) -> String? {
+        guard let parent, c.parentId != parent.id, budgets.contains(where: { $0.categoryId == c.id }) else { return nil }
+        return budgets.contains { $0.categoryId == parent.id }
+            ? "Das Budget dieser Kategorie wird gelöscht, weil \(parent.name) schon eins hat."
+            : "Das Budget geht auf \(parent.name) über."
+    }
+}
+
+/// Liste der Kategorienverwaltung: Unterkategorien eingerückt unter ihrer Hauptkategorie.
+enum CategoryList {
+    struct Row: Equatable, Identifiable {
+        var category: CategoryValue
+        var isChild: Bool
+        var id: UUID { category.id }
+    }
+
+    /// Aktive Hauptkategorien der Art (Reihenfolge), je gefolgt von ihren aktiven Unterkategorien.
+    static func activeRows(_ all: [CategoryValue], kind: Kind) -> [Row] {
+        let tree = CategoryTree(all)
+        return mains(tree, kind: kind).flatMap { main in
+            [Row(category: main, isChild: false)]
+                + tree.childrenOf(main.id).filter { !$0.archived }.map { Row(category: $0, isChild: true) }
+        }
+    }
+
+    /// Archivierte der Art – auch Unterkategorien einer archivierten Hauptkategorie –, nach Label.
+    static func archived(_ all: [CategoryValue], kind: Kind) -> [CategoryValue] {
+        let tree = CategoryTree(all)
+        return all.filter { $0.kind == kind && !tree.isSelectable($0) }
+            .sorted { tree.label($0.id).localizedStandardCompare(tree.label($1.id)) == .orderedAscending }
+    }
+
+    /// Neue Reihenfolge (IDs) nach `onMove`: eine Hauptkategorie wandert mit ihren Unterkategorien; eine
+    /// Unterkategorie nur innerhalb ihrer Geschwister (sonst `nil`).
+    static func reordered(_ rows: [Row], from source: IndexSet, to destination: Int) -> [UUID]? {
+        guard source.count == 1, let index = source.first, rows.indices.contains(index) else { return nil }
+        let moved = rows[index]
+        if moved.isChild {
+            let siblings = rows.indices.filter { rows[$0].isChild && rows[$0].category.parentId == moved.category.parentId }
+            guard let first = siblings.first, let last = siblings.last, (first...last + 1).contains(destination)
+            else { return nil }
+            var result = rows
+            result.move(fromOffsets: source, toOffset: destination)
+            return result.map(\.id)
+        }
+        var mains = rows.filter { !$0.isChild }
+        let from = mains.firstIndex { $0.id == moved.id }!
+        mains.move(fromOffsets: [from], toOffset: rows[..<destination].filter { !$0.isChild }.count)
+        return mains.flatMap { main in
+            [main.id] + rows.filter { $0.isChild && $0.category.parentId == main.id }.map(\.id)
+        }
+    }
+
+    private static func mains(_ tree: CategoryTree, kind: Kind) -> [CategoryValue] {
+        tree.byId.values.filter { $0.kind == kind && !$0.archived && tree.rootOf($0.id) == $0.id }
+            .sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
     }
 }
 

@@ -179,6 +179,8 @@ export interface components {
             /** @enum {string} */
             kind: "income" | "expense";
             name: string;
+            /** Format: uuid */
+            parentId?: string | null;
             sortOrder: number;
         };
         CategoryRecordOut: {
@@ -191,6 +193,8 @@ export interface components {
             /** @enum {string} */
             kind: "income" | "expense";
             name: string;
+            /** Format: uuid */
+            parentId: string | null;
             sortOrder: number;
             version: number;
         };

@@ -1,8 +1,8 @@
-import { ArrowDownRight, ArrowUpRight, PiggyBank, Sparkles } from 'lucide-react'
-import { useMemo } from 'react'
+import { ArrowDownRight, ArrowUpRight, ChevronDown, PiggyBank, Sparkles } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
-import { useData, useMe } from '../../app/AppContext'
+import { useCategoryTree, useData, useMe } from '../../app/AppContext'
 import { CategoryIcon } from '../../components/CategoryIcon'
 import { MonthSwitcher } from '../../components/MonthSwitcher'
 import { TransactionRow } from '../../components/TransactionRow'
@@ -30,6 +30,15 @@ export function Overview() {
   const data = useData()
   const { openNew, openEdit } = useEntry()
   const [month, setMonth] = useMonthParam()
+  const tree = useCategoryTree()
+  /** Main categories whose subcategory breakdown is shown. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
 
   const txs = useMemo(() => [...data.transactions.values()], [data.transactions])
   const model = useMemo(
@@ -45,7 +54,7 @@ export function Overview() {
     [txs, data.categories, data.names, data.budgets, month],
   )
   const trend = useMemo(() => monthlyTrend(txs, month, 12), [txs, month])
-  const catTrend = useMemo(() => categoryTrend(txs, month, 6, 5), [txs, month])
+  const catTrend = useMemo(() => categoryTrend(txs, month, 6, 5, tree.rootOf), [txs, month, tree])
   // Whole month on the x axis; in the current month the line stops today.
   const spark = useMemo(() => {
     const now = today()
@@ -126,7 +135,7 @@ export function Overview() {
                     <PieChart>
                       <Pie data={model.slices} dataKey="cents" nameKey="name" innerRadius="70%" outerRadius="100%" paddingAngle={2} cornerRadius={6} stroke="none" startAngle={90} endAngle={-270}>
                         {model.slices.map((sl) => (
-                          <Cell key={sl.id} fill={sl.color} />
+                          <Cell key={sl.id} fill={sl.color} onClick={sl.children.length > 0 ? () => toggle(sl.id) : undefined} className={cn(sl.children.length > 0 && 'cursor-pointer')} />
                         ))}
                       </Pie>
                       <Tooltip content={<ChartTip />} />
@@ -140,14 +149,52 @@ export function Overview() {
                   </div>
                 </div>
                 <ul className="mt-4 space-y-2.5">
-                  {model.slices.map((sl) => (
-                    <li key={sl.id} className="flex items-center gap-3 text-[14px]">
-                      <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: sl.color }} />
-                      <span className="min-w-0 flex-1 truncate font-medium">{sl.name}</span>
-                      <span className="text-ink-3">{Math.round((sl.cents / s.expenseCents) * 100)} %</span>
-                      <span className="num w-20 text-right font-semibold">{fmtShort(sl.cents)}</span>
-                    </li>
-                  ))}
+                  {model.slices.map((sl) => {
+                    const share = (cents: number) => `${Math.round((cents / s.expenseCents) * 100)} %`
+                    const open = expanded.has(sl.id)
+                    const row = (
+                      <>
+                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: sl.color }} />
+                        <span className="flex min-w-0 flex-1 items-center gap-1">
+                          <span className="truncate font-medium">{sl.name}</span>
+                          {sl.children.length > 0 && <ChevronDown aria-hidden className={cn('size-4 shrink-0 text-ink-3 transition-transform', open && 'rotate-180')} />}
+                        </span>
+                        <span className="text-ink-3">{share(sl.cents)}</span>
+                        <span className="num w-20 text-right font-semibold">{fmtShort(sl.cents)}</span>
+                      </>
+                    )
+                    if (sl.children.length === 0) {
+                      return (
+                        <li key={sl.id} className="flex items-center gap-3 text-[14px]">
+                          {row}
+                        </li>
+                      )
+                    }
+                    return (
+                      <li key={sl.id}>
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          aria-controls={`breakdown-${sl.id}`}
+                          onClick={() => toggle(sl.id)}
+                          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-3 rounded-xl px-1.5 py-0.5 text-left text-[14px] transition hover:bg-tile-2"
+                        >
+                          {row}
+                        </button>
+                        {open && (
+                          <ul id={`breakdown-${sl.id}`} aria-label={`Aufteilung ${sl.name}`} className="ml-1 mt-2 space-y-2 border-l-2 border-line pl-4">
+                            {sl.children.map((sub) => (
+                              <li key={sub.id} className="flex items-center gap-3 text-[13px] text-ink-2">
+                                <span className="min-w-0 flex-1 truncate">{sub.name}</span>
+                                <span className="text-ink-3">{share(sub.cents)}</span>
+                                <span className="num w-20 text-right font-medium">{fmtShort(sub.cents)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ul>
               </>
             )}
@@ -249,7 +296,7 @@ export function Overview() {
             ) : (
               <div className="-mx-2 mt-2">
                 {model.recent.map((t) => (
-                  <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} payerName={data.names.get(t.paidBy)} showPayer={multiplePeople} onClick={() => openEdit(t)} />
+                  <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} label={tree.byId.has(t.categoryId) ? tree.labelFor(t.categoryId) : undefined} color={tree.colorFor(t.categoryId)} payerName={data.names.get(t.paidBy)} showPayer={multiplePeople} onClick={() => openEdit(t)} />
                 ))}
               </div>
             )}

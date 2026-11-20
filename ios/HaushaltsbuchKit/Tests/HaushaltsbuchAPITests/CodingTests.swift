@@ -18,7 +18,8 @@ private let syncResponseJSON = """
         "color": "#33AA55",
         "kind": "expense",
         "sortOrder": 1,
-        "archived": false
+        "archived": false,
+        "parentId": null
       }
     ],
     "transactions": [
@@ -125,6 +126,14 @@ private func isMissingOrNull(_ object: [String: Any], _ key: String) -> Bool {
     #expect(response.changes.users.first?.username == "anna")
     #expect(response.rejected.first?.id == nil)
     #expect(response.rejected.first?.reason == "invalid_record")
+}
+
+@Test func decodesCategoryParentId() throws {
+    #expect(try decodeSyncResponse(syncResponseJSON).changes.categories.first?.parentId == nil)
+    let json = syncResponseJSON.replacingOccurrences(
+        of: "\"parentId\": null", with: "\"parentId\": \"9f8e7d6c-5b4a-4321-8fed-cba987654321\"")
+    let response = try decodeSyncResponse(json)
+    #expect(response.changes.categories.first?.parentId == "9f8e7d6c-5b4a-4321-8fed-cba987654321")
 }
 
 @Test func decodesNonNullNullableFields() throws {

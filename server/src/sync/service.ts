@@ -99,10 +99,27 @@ class Collector {
  * offline) is restored as archived, with a new version so every device sees it again.
  */
 async function reviveCategory(sp: Tx, categoryId: string): Promise<void> {
+  const [cat] = await sp
+    .select({ parentId: categories.parentId, kind: categories.kind })
+    .from(categories)
+    .where(and(eq(categories.id, categoryId), eq(categories.deleted, true)))
+  if (!cat) return
+  let parentId = cat.parentId
+  if (parentId !== null) {
+    // The tree may have changed while this subcategory was deleted (its children don't block
+    // that): if its parent is no longer a valid parent, revive it as top-level instead.
+    const [parent] = await sp
+      .select({ parentId: categories.parentId, kind: categories.kind })
+      .from(categories)
+      .where(eq(categories.id, parentId))
+    if (!parent || parent.parentId !== null || parent.kind !== cat.kind) parentId = null
+  }
   await sp
     .update(categories)
-    .set({ deleted: false, archived: true, ...bump() })
-    .where(and(eq(categories.id, categoryId), eq(categories.deleted, true)))
+    .set({ deleted: false, archived: true, parentId, ...bump() })
+    .where(eq(categories.id, categoryId))
+  // A revived subcategory needs its parent back too (one level, so this recurses at most once).
+  if (parentId !== null) await reviveCategory(sp, parentId)
 }
 
 /**
@@ -120,8 +137,65 @@ async function checkPaidBy(
   if (u?.deleted) throw new Rejection('unknown_user')
 }
 
+/** True if the category has a non-deleted subcategory. */
+async function hasActiveChildren(sp: Tx, categoryId: string): Promise<boolean> {
+  const [child] = await sp
+    .select({ id: categories.id })
+    .from(categories)
+    .where(and(eq(categories.parentId, categoryId), eq(categories.deleted, false)))
+    .limit(1)
+  return child !== undefined
+}
+
+/**
+ * Tree rules for a non-deleted category (exactly one level): the parent exists, is not deleted,
+ * is itself top-level, has the same kind and is not the category itself. A category with
+ * subcategories can neither get a parent nor change its kind.
+ */
+async function checkParent(
+  sp: Tx,
+  r: CategoryRecord,
+  parentId: string | null,
+  existing: { kind: CategoryRecord['kind'] } | undefined,
+): Promise<void> {
+  if (parentId !== null) {
+    if (parentId === r.id) throw new Rejection('invalid_parent')
+    const [parent] = await sp
+      .select({ deleted: categories.deleted, parentId: categories.parentId, kind: categories.kind })
+      .from(categories)
+      .where(eq(categories.id, parentId))
+    if (!parent || parent.deleted || parent.parentId !== null || parent.kind !== r.kind) {
+      throw new Rejection('invalid_parent')
+    }
+  }
+  if (existing && (parentId !== null || existing.kind !== r.kind) && (await hasActiveChildren(sp, r.id))) {
+    throw new Rejection('invalid_parent')
+  }
+}
+
+/**
+ * Budgets live only on top-level categories. When a category becomes a subcategory, its active
+ * budget moves to the parent, or is deleted if the parent already has one.
+ */
+async function rehomeBudget(sp: Tx, childId: string, parentId: string): Promise<void> {
+  const [childBudget] = await sp
+    .select({ id: budgets.id })
+    .from(budgets)
+    .where(and(eq(budgets.categoryId, childId), eq(budgets.deleted, false)))
+  if (!childBudget) return
+  const [parentBudget] = await sp
+    .select({ id: budgets.id })
+    .from(budgets)
+    .where(and(eq(budgets.categoryId, parentId), eq(budgets.deleted, false)))
+  await sp
+    .update(budgets)
+    .set(parentBudget ? { deleted: true, ...bump() } : { categoryId: parentId, ...bump() })
+    .where(eq(budgets.id, childBudget.id))
+}
+
 async function upsertCategory(sp: Tx, r: CategoryRecord): Promise<void> {
   if (r.deleted) {
+    if (await hasActiveChildren(sp, r.id)) throw new Rejection('category_has_children')
     const [txn] = await sp
       .select({ id: transactions.id })
       .from(transactions)
@@ -134,17 +208,26 @@ async function upsertCategory(sp: Tx, r: CategoryRecord): Promise<void> {
       .limit(1)
     if (txn || rule) throw new Rejection('category_in_use')
   }
+  const [existing] = await sp
+    .select({ parentId: categories.parentId, kind: categories.kind })
+    .from(categories)
+    .where(eq(categories.id, r.id))
+  // Older clients don't send `parentId`: keep the stored one instead of resetting it to top-level.
+  const parentId = r.parentId === undefined ? (existing?.parentId ?? null) : r.parentId
+  if (!r.deleted) await checkParent(sp, r, parentId, existing)
   const { id: _id, ...fields } = r
   await sp
     .insert(categories)
-    .values(r)
-    .onConflictDoUpdate({ target: categories.id, set: { ...fields, ...bump() } })
+    .values({ ...r, parentId })
+    .onConflictDoUpdate({ target: categories.id, set: { ...fields, parentId, ...bump() } })
   if (r.deleted) {
     // Budgets of a deleted category are meaningless; delete them in the same savepoint.
     await sp
       .update(budgets)
       .set({ deleted: true, ...bump() })
       .where(and(eq(budgets.categoryId, r.id), eq(budgets.deleted, false)))
+  } else if (parentId !== null && parentId !== existing?.parentId) {
+    await rehomeBudget(sp, r.id, parentId)
   }
 }
 
@@ -193,7 +276,15 @@ async function upsertTransaction(sp: Tx, r: TransactionRecord): Promise<void> {
 }
 
 async function upsertBudget(sp: Tx, r: BudgetRecord): Promise<void> {
-  if (!r.deleted) await reviveCategory(sp, r.categoryId)
+  if (!r.deleted) {
+    // Budgets only on top-level categories (a parent's budget covers its subcategories).
+    const [cat] = await sp
+      .select({ parentId: categories.parentId })
+      .from(categories)
+      .where(eq(categories.id, r.categoryId))
+    if (cat?.parentId) throw new Rejection('budget_on_subcategory')
+    await reviveCategory(sp, r.categoryId)
+  }
   const { id: _id, ...fields } = r
   await sp
     .insert(budgets)
@@ -245,6 +336,7 @@ export async function pull(
         kind: categories.kind,
         sortOrder: categories.sortOrder,
         archived: categories.archived,
+        parentId: categories.parentId,
       })
       .from(categories)
       .where(gt(categories.version, sinceVersion))
@@ -321,7 +413,9 @@ export async function pull(
  *
  * Order: categories → recurringRules → transactions → budgets, so references inside one push
  * resolve. Category *deletions* are applied last, so a push that deletes a category together
- * with its last transactions/rules succeeds.
+ * with its last transactions/rules succeeds. Within categories, top-level ones are written first
+ * (a parent before its subcategories) and subcategories are deleted first (children before the
+ * parent), so a push containing both succeeds in any order.
  */
 export async function applySync(
   db: Db,
@@ -340,12 +434,18 @@ export async function applySync(
     const c = new Collector()
     let rulesChanged = false
 
+    const categoryUpserts: CategoryRecord[] = []
     const categoryDeletes: CategoryRecord[] = []
     for (const raw of req.changes.categories ?? []) {
       const r = c.parse('categories', raw, categoryRecord)
-      if (!r) continue
-      if (r.deleted) categoryDeletes.push(r)
-      else await c.write(tx, 'categories', r.id, (sp) => upsertCategory(sp, r))
+      if (r) (r.deleted ? categoryDeletes : categoryUpserts).push(r)
+    }
+    // Array.prototype.sort is stable, so the client's order is kept within each group.
+    const isChild = (r: CategoryRecord) => (r.parentId ? 1 : 0)
+    categoryUpserts.sort((a, b) => isChild(a) - isChild(b))
+    categoryDeletes.sort((a, b) => isChild(b) - isChild(a))
+    for (const r of categoryUpserts) {
+      await c.write(tx, 'categories', r.id, (sp) => upsertCategory(sp, r))
     }
     for (const raw of req.changes.recurringRules ?? []) {
       const r = c.parse('recurringRules', raw, recurringRuleRecordPush)

@@ -3,7 +3,8 @@ import Observation
 import HaushaltsbuchCore
 import HaushaltsbuchData
 
-/// Zustand der Schnellerfassung: Betrag per Ziffernblock, Kategorie-Tipp speichert.
+/// Zustand der Schnellerfassung: Betrag per Ziffernblock, Kategorie-Tipp speichert. Hat die Kategorie
+/// Unterkategorien, zeigt der Tipp stattdessen deren Chips; ein Chip-Tipp speichert.
 @MainActor @Observable
 public final class QuickEntryModel {
     public enum SaveError: Error, Equatable {
@@ -12,7 +13,12 @@ public final class QuickEntryModel {
 
     public var amount = AmountInput()
     public var kind: Kind = .expense {
-        didSet { if kind != oldValue { reloadCategories() } }
+        didSet {
+            if kind != oldValue {
+                chipParentId = nil
+                reloadCategories()
+            }
+        }
     }
     public var day: CalendarDay
     public var paidBy: UUID
@@ -25,8 +31,12 @@ public final class QuickEntryModel {
     /// Buchung erzeugt der Server (ist `day` heute oder früher, sofort).
     public var repeatRhythm: Rhythm?
 
-    /// Nicht archivierte Kategorien der gewählten Art, nach jüngster Nutzung gerankt.
+    /// Nicht archivierte Hauptkategorien der gewählten Art, nach jüngster Nutzung gerankt (Buchungen
+    /// auf Unterkategorien zählen für die Hauptkategorie).
     public private(set) var categories: [CategoryValue] = []
+    /// Hauptkategorie, deren Unterkategorie-Chips gezeigt werden.
+    public private(set) var chipParentId: UUID?
+    private var choice = CategoryChoice([])
     /// Aktive Haushaltsmitglieder für „Bezahlt von“.
     public private(set) var members: [MemberEntity] = []
     /// Nach erfolgreichem Speichern `true`: weitere `save`-Aufrufe sind wirkungslos.
@@ -48,6 +58,23 @@ public final class QuickEntryModel {
     }
 
     public var canSave: Bool { amount.isValid && !didSave }
+
+    /// „Allgemein“ + Unterkategorien von `chipParentId`; ein Tipp speichert (`save(category:)`).
+    var chipOptions: [SubcategoryOption] {
+        chipParentId.map(choice.chips(for:)) ?? []
+    }
+
+    /// Tipp auf eine Hauptkategorie: ohne wählbare Unterkategorien speichern (`true`), sonst die Chips
+    /// zeigen (`false`).
+    @discardableResult
+    public func tapCategory(_ id: UUID) throws -> Bool {
+        if choice.chips(for: id).isEmpty {
+            try save(category: id)
+            return true
+        }
+        chipParentId = id
+        return false
+    }
 
     /// Optionen für „Bezahlt von“; der angemeldete Benutzer ist immer enthalten (auch vor dem ersten
     /// Sync der Mitglieder), damit die Auswahl einen passenden Tag hat.
@@ -78,9 +105,15 @@ public final class QuickEntryModel {
     }
 
     private func reloadCategories() {
-        categories = Analytics.rankCategories(
-            repository.activeCategories().map(\.value),
-            txs: repository.activeTransactions().map(\.value),
-            kind: kind, today: today())
+        choice = CategoryChoice(repository.activeCategories().map(\.value))
+        let tree = choice.tree
+        let txs = repository.activeTransactions().map { tx in
+            var v = tx.value
+            v.categoryId = tree.rootOf(v.categoryId)
+            return v
+        }
+        let mains = tree.byId.values.filter { tree.rootOf($0.id) == $0.id }
+            .sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
+        categories = Analytics.rankCategories(mains, txs: txs, kind: kind, today: today())
     }
 }

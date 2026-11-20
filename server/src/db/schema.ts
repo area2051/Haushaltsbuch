@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -81,8 +82,10 @@ export const categories = pgTable(
     kind: kindEnum('kind').notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
     archived: boolean('archived').notNull().default(false),
+    /** One level of nesting: the parent category, or null for a top-level category. */
+    parentId: uuid('parent_id').references((): AnyPgColumn => categories.id),
   },
-  (t) => [index('categories_version_idx').on(t.version)],
+  (t) => [index('categories_version_idx').on(t.version), index('categories_parent_idx').on(t.parentId)],
 )
 
 export const recurringRules = pgTable(

@@ -3,10 +3,14 @@ import Testing
 @testable import HaushaltsbuchCore
 
 private let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
-private let header = "Datum;Art;Kategorie;Betrag;Notiz;Bezahlt von"
-private let catId = UUID(), userId = UUID()
-private let cats = [catId: CategoryValue(id: catId, name: "Lebensmittel", icon: "cart", color: "#fff",
-                                         kind: .expense, sortOrder: 0, archived: false)]
+private let header = "Datum;Art;Kategorie;Unterkategorie;Betrag;Notiz;Bezahlt von"
+private let catId = UUID(), userId = UUID(), homeId = UUID(), powerId = UUID()
+private let cats = CategoryTree([
+    CategoryValue(id: catId, name: "Lebensmittel", icon: "cart", color: "#fff", kind: .expense, sortOrder: 0, archived: false),
+    CategoryValue(id: homeId, name: "Wohnen", icon: "house", color: "#fff", kind: .expense, sortOrder: 1, archived: false),
+    CategoryValue(id: powerId, name: "Strom", icon: "bolt", color: "#fff", kind: .expense, sortOrder: 0, archived: false,
+                  parentId: homeId),
+])
 private let members = [userId: "Anna"]
 
 private func tx(_ cents: Int, _ day: String, kind: Kind = .expense, cat: UUID = catId, by: UUID = userId,
@@ -16,14 +20,14 @@ private func tx(_ cents: Int, _ day: String, kind: Kind = .expense, cat: UUID = 
 }
 
 private func csv(_ txs: [TxValue], from: String = "2026-01-01", to: String = "2026-12-31") -> String {
-    let data = CSVExport.make(txs, categories: cats, members: members,
+    let data = CSVExport.make(txs, tree: cats, members: members,
                               from: CalendarDay(string: from)!, to: CalendarDay(string: to)!)
     #expect(Array(data.prefix(3)) == bom)
     return String(decoding: data.dropFirst(3), as: UTF8.self)
 }
 
 @Test func startsWithBOMAndHeader() {
-    let data = CSVExport.make([], categories: [:], members: [:],
+    let data = CSVExport.make([], tree: CategoryTree([]), members: [:],
                               from: CalendarDay(string: "2026-11-01")!, to: CalendarDay(string: "2026-11-30")!)
     #expect(Array(data.prefix(3)) == bom)
     #expect(String(decoding: data.dropFirst(3), as: UTF8.self) == header + "\r\n")
@@ -33,14 +37,14 @@ private func csv(_ txs: [TxValue], from: String = "2026-01-01", to: String = "20
     let out = csv([tx(1250, "2026-11-01", note: "Wocheneinkauf"),
                    tx(123456, "2026-11-02", kind: .income)])
     #expect(out == header + "\r\n"
-        + "01.11.2026;Ausgabe;Lebensmittel;12,50;Wocheneinkauf;Anna\r\n"
-        + "02.11.2026;Einnahme;Lebensmittel;1234,56;;Anna\r\n")
+        + "01.11.2026;Ausgabe;Lebensmittel;;12,50;Wocheneinkauf;Anna\r\n"
+        + "02.11.2026;Einnahme;Lebensmittel;;1234,56;;Anna\r\n")
 }
 
 @Test func formatsSmallAmountsAndSortsByDate() {
     let out = csv([tx(5, "2026-11-03"), tx(100, "2026-02-01"), tx(7, "2026-11-03")])
     let lines = out.components(separatedBy: "\r\n")
-    #expect(lines[1].hasPrefix("01.02.2026;Ausgabe;Lebensmittel;1,00;"))
+    #expect(lines[1].hasPrefix("01.02.2026;Ausgabe;Lebensmittel;;1,00;"))
     #expect(lines[2].contains(";0,05;"))
     #expect(lines[3].contains(";0,07;"))   // stabil bei gleichem Datum
 }
@@ -60,7 +64,7 @@ private func csv(_ txs: [TxValue], from: String = "2026-01-01", to: String = "20
 
 @Test func unknownCategoryAndPersonAreEmpty() {
     let out = csv([tx(100, "2026-11-01", cat: UUID(), by: UUID())])
-    #expect(out.contains("01.11.2026;Ausgabe;;1,00;;\r\n"))
+    #expect(out.contains("01.11.2026;Ausgabe;;;1,00;;\r\n"))
 }
 
 @Test func filtersRangeInclusive() {
@@ -75,4 +79,9 @@ private func csv(_ txs: [TxValue], from: String = "2026-01-01", to: String = "20
 @Test func fileNameUsesRange() {
     #expect(CSVExport.fileName(from: CalendarDay(string: "2026-11-01")!, to: CalendarDay(string: "2026-11-30")!)
             == "Haushaltsbuch_2026-11-01_2026-11-30.csv")
+}
+
+@Test func subcategoryBookingFillsKategorieAndUnterkategorie() {
+    let out = csv([tx(100, "2026-02-01", cat: powerId)])
+    #expect(out.components(separatedBy: "\r\n")[1] == "01.02.2026;Ausgabe;Wohnen;Strom;1,00;;Anna")
 }

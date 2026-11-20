@@ -1,8 +1,9 @@
 import { CalendarClock, Plus } from 'lucide-react'
 import { type FormEvent, useMemo, useState } from 'react'
-import { useData, useMe } from '../../app/AppContext'
+import { useCategoryTree, useData, useMe } from '../../app/AppContext'
 import { useSaver } from '../../app/useSaver'
 import { CategoryIcon } from '../../components/CategoryIcon'
+import { SubcategoryChips } from '../../components/SubcategoryChips'
 import { Button } from '../../components/ui/Button'
 import { ConfirmButton } from '../../components/ui/ConfirmButton'
 import { Field, Input, Select } from '../../components/ui/Field'
@@ -19,6 +20,7 @@ import { MAX_INTERVAL, type RuleDraft, ruleProblem, ruleSchedule, toRule } from 
 
 export function Recurring() {
   const data = useData()
+  const tree = useCategoryTree()
   const [editing, setEditing] = useState<RecurringRule | 'new' | null>(null)
   const rules = useMemo(() => [...data.recurringRules.values()].sort((a, b) => (a.nextDueDate < b.nextDueDate ? -1 : 1)), [data.recurringRules])
   const now = today()
@@ -47,9 +49,9 @@ export function Recurring() {
             return (
               <li key={r.id}>
                 <button onClick={() => setEditing(r)} className="flex w-full items-center gap-3 rounded-tile bg-tile p-4 text-left shadow-tile transition active:scale-[0.99]">
-                  <CategoryIcon icon={c?.icon ?? ''} color={c?.color ?? '#999'} />
+                  <CategoryIcon icon={c?.icon ?? ''} color={tree.colorFor(r.categoryId) ?? '#999'} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-medium">{r.note || c?.name || 'Ohne Kategorie'}</span>
+                    <span className="block truncate text-[15px] font-medium">{r.note || (c ? tree.labelFor(c.id) : 'Ohne Kategorie')}</span>
                     <span className="block truncate text-[13px] text-ink-3">{ruleSchedule(r.frequency, r.interval, r.startDate)}</span>
                     <span className="block truncate text-[13px] text-ink-3">
                       {ended ? 'Beendet' : r.nextDueDate <= now ? 'Heute fällig' : `Nächste Buchung am ${germanDate(r.nextDueDate)}`}
@@ -77,6 +79,7 @@ const PROBLEM_TEXT: Record<string, string> = {
 
 function RuleForm({ target, onDone }: { target: RecurringRule | 'new'; onDone(): void }) {
   const data = useData()
+  const tree = useCategoryTree()
   const me = useMe()
   const save = useSaver()
   const existing = target === 'new' ? null : target
@@ -94,7 +97,9 @@ function RuleForm({ target, onDone }: { target: RecurringRule | 'new'; onDone():
   const set = (p: Partial<typeof d>) => setD((x) => ({ ...x, ...p }))
   const draft: RuleDraft = { ...d, cents: parseMoney(amount) ?? 0 }
   const problem = ruleProblem(draft)
-  const categories = [...data.categories.values()].filter((c) => c.kind === d.kind && (!c.archived || c.id === d.categoryId)).sort((a, b) => a.sortOrder - b.sortOrder)
+  // Main categories here; subcategories are picked with the chips below.
+  const mainId = d.categoryId ? tree.rootOf(d.categoryId) : ''
+  const categories = [...data.categories.values()].filter((c) => !c.parentId && c.kind === d.kind && (!c.archived || c.id === mainId)).sort((a, b) => a.sortOrder - b.sortOrder)
   const members = [...data.users.values()]
 
   async function submit(e: FormEvent) {
@@ -129,7 +134,7 @@ function RuleForm({ target, onDone }: { target: RecurringRule | 'new'; onDone():
         </Field>
         <Field label="Kategorie">
           {(id) => (
-            <Select id={id} value={d.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
+            <Select id={id} value={mainId} onChange={(e) => set({ categoryId: e.target.value })}>
               <option value="">Bitte wählen</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -140,6 +145,7 @@ function RuleForm({ target, onDone }: { target: RecurringRule | 'new'; onDone():
           )}
         </Field>
       </div>
+      {mainId && <SubcategoryChips parentId={mainId} value={d.categoryId} tree={tree} onChange={(categoryId) => set({ categoryId })} />}
       <RhythmPicker value={{ frequency: d.frequency, interval: d.interval }} onChange={(r) => r && set(r)} />
       {problem === 'interval' && <p className="px-1 text-[13px] text-neg">Zahl von 1 bis {MAX_INTERVAL} eingeben</p>}
       <div className="grid gap-4 sm:grid-cols-2">

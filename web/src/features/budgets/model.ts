@@ -1,16 +1,18 @@
 import { type BudgetProgress, budgetProgress, expensesByCategory } from '../../domain/analytics'
+import { categoryTree } from '../../domain/categoryTree'
 import type { Month } from '../../domain/dates'
 import type { Budget, BudgetInput, Category, Transaction } from '../../domain/types'
 
 export type BudgetRow = { category: Category; budget?: Budget; spentCents: number; progress?: BudgetProgress }
 
-/** Active expense categories (sort order) with month spending and their budget, if any. */
+/** Active main expense categories (sort order; spending includes subcategories) with month spending and their budget, if any. */
 export function budgetRows(categories: Category[], budgets: Budget[], txs: Transaction[], month: Month) {
-  const spent = new Map(expensesByCategory(txs, month).map((t) => [t.id, t.cents]))
+  const { rootOf } = categoryTree(categories)
+  const spent = new Map(expensesByCategory(txs, month, rootOf).map((t) => [t.id, t.cents]))
   const byCategory = new Map(budgets.map((b) => [b.categoryId, b]))
-  const progress = new Map(budgetProgress(budgets, txs, month).map((p) => [p.categoryId, p]))
+  const progress = new Map(budgetProgress(budgets, txs, month, rootOf).map((p) => [p.categoryId, p]))
   const items: BudgetRow[] = categories
-    .filter((c) => c.kind === 'expense' && !c.archived)
+    .filter((c) => c.kind === 'expense' && !c.archived && !c.parentId)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
     .map((category) => ({
       category,

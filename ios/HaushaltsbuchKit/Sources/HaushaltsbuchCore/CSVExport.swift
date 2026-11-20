@@ -2,9 +2,10 @@ import Foundation
 
 /// CSV-Export für Excel (DE): UTF-8 mit BOM, `;`-getrennt, `\r\n`-Zeilenenden.
 public enum CSVExport {
-    static let header = "Datum;Art;Kategorie;Betrag;Notiz;Bezahlt von"
+    static let header = "Datum;Art;Kategorie;Unterkategorie;Betrag;Notiz;Bezahlt von"
 
-    public static func make(_ txs: [TxValue], categories: [UUID: CategoryValue], members: [UUID: String],
+    /// Spalte „Kategorie“ = Hauptkategorie, „Unterkategorie“ nur bei Buchungen auf einer Unterkategorie.
+    public static func make(_ txs: [TxValue], tree: CategoryTree, members: [UUID: String],
                             from: CalendarDay, to: CalendarDay) -> Data {
         let rows = txs.enumerated()
             .filter { $0.element.day >= from && $0.element.day <= to }
@@ -13,10 +14,13 @@ public enum CSVExport {
 
         var out = header + "\r\n"
         for t in rows {
+            let root = tree.byId[tree.rootOf(t.categoryId)]
+            let own = tree.byId[t.categoryId]
             let fields = [
                 germanDate(t.day),
                 t.kind == .income ? "Einnahme" : "Ausgabe",
-                categories[t.categoryId]?.name ?? "",
+                root?.name ?? "",
+                own.flatMap { $0.id == root?.id ? nil : $0.name } ?? "",
                 amount(t.amountCents),
                 t.note ?? "",
                 members[t.paidBy] ?? "",

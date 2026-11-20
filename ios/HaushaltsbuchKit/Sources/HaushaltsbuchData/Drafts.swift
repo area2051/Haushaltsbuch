@@ -7,13 +7,16 @@ public struct CategoryDraft: Sendable {
     public var icon: String
     public var color: String
     public var kind: Kind
+    /// Hauptkategorie; Unterkategorien übernehmen deren Farbe und Art.
+    public var parentId: UUID?
 
-    public init(id: UUID? = nil, name: String, icon: String, color: String, kind: Kind) {
+    public init(id: UUID? = nil, name: String, icon: String, color: String, kind: Kind, parentId: UUID? = nil) {
         self.id = id
         self.name = name
         self.icon = icon
         self.color = color
         self.kind = kind
+        self.parentId = parentId
     }
 }
 

@@ -4,6 +4,9 @@ const REJECTIONS: Record<string, string> = {
   foreign_key_violation: 'Verweis auf nicht vorhandene Daten.',
   unique_violation: 'Eintrag existiert bereits.',
   invalid_value: 'Ungültiger Wert.',
+  invalid_parent: 'Diese Zuordnung ist nicht möglich (nur eine Ebene, gleiche Art).',
+  category_has_children: 'Die Kategorie hat noch Unterkategorien.',
+  budget_on_subcategory: 'Budgets gibt es nur für Hauptkategorien.',
 }
 
 /** Server rejection reasons (`rejected[].reason`) for display; raw reasons are never shown. */

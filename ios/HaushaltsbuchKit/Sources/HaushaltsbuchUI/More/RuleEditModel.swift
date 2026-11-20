@@ -19,8 +19,9 @@ final class RuleEditModel {
     var hasEndDate: Bool
     var endDate: CalendarDay
 
-    private(set) var allCategories: [CategoryValue]
     private(set) var members: [MemberEntity]
+    /// Kategorien (nicht gelöscht); die bisherige der Regel bleibt wählbar, auch archiviert.
+    private let choice: CategoryChoice
 
     @ObservationIgnored let rule: RecurringRuleEntity?
     @ObservationIgnored private let repository: Repository
@@ -33,7 +34,7 @@ final class RuleEditModel {
         self.rule = rule
         self.repository = repository
         self.currentUserId = currentUserId
-        allCategories = repository.activeCategories().map(\.value)
+        choice = CategoryChoice(repository.activeCategories().map(\.value), keep: rule?.categoryId)
         members = repository.activeMembers()
         if let rule {
             amount = AmountInput(cents: rule.amountCents)
@@ -59,10 +60,18 @@ final class RuleEditModel {
         }
     }
 
-    /// Nicht archivierte Kategorien der Art; die bisherige der Regel bleibt wählbar.
-    var categories: [CategoryValue] {
-        allCategories.filter { $0.kind == kind && (!$0.archived || $0.id == rule?.categoryId) }
-            .sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
+    /// Hauptkategorien der Art fürs Raster; Unterkategorien wählen die Chips.
+    var categories: [CategoryValue] { choice.mains(kind: kind) }
+
+    /// Im Raster markierte Hauptkategorie.
+    var mainId: UUID? { categoryId.map(choice.tree.rootOf) }
+
+    /// „Allgemein“ + Unterkategorien der gewählten Hauptkategorie; ein Tipp setzt nur `categoryId`.
+    var chipOptions: [SubcategoryOption] { mainId.map(choice.chips(for:)) ?? [] }
+
+    /// Andere Hauptkategorie: beginnt bei „Allgemein“; dieselbe: Unterkategorie bleibt.
+    func selectMain(_ id: UUID) {
+        if id != mainId { categoryId = id }
     }
 
     /// Mitglieder; angemeldeter Benutzer und bisheriger Zahler sind immer enthalten.
@@ -87,7 +96,7 @@ final class RuleEditModel {
 
     var validationMessage: String? {
         guard let draft else { return "Bitte eine Kategorie wählen." }
-        if !categories.contains(where: { $0.id == draft.categoryId }) { return "Bitte eine Kategorie wählen." }
+        if !choice.isValid(draft.categoryId, kind: kind) { return "Bitte eine Kategorie wählen." }
         return draft.validationError()
     }
 
@@ -110,7 +119,7 @@ final class RuleEditModel {
     }
 
     private func kindChanged() {
-        if let id = categoryId, categories.contains(where: { $0.id == id }) { return }
+        if let id = categoryId, choice.isValid(id, kind: kind) { return }
         categoryId = categories.first?.id
     }
 }

@@ -21,6 +21,7 @@ public struct PendingChanges: Equatable, Sendable {
 public enum RepositoryError: Error, Equatable {
     case notFound
     case invalid(String)
+    case hasChildren
 }
 
 /// Einziger Schreibzugang der UI auf SwiftData. Jede Schreibmethode markiert dirty, speichert und ruft `onChange`.
@@ -123,6 +124,13 @@ public final class Repository {
 
     @discardableResult
     public func saveCategory(_ draft: CategoryDraft) throws -> CategoryEntity {
+        var draft = draft
+        if let parentId = draft.parentId {
+            guard let parent = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.id == parentId })).first
+            else { throw RepositoryError.notFound }
+            draft.color = parent.color
+            draft.kind = parent.kindValue
+        }
         let entity: CategoryEntity
         if let id = draft.id {
             guard let existing = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.id == id })).first
@@ -131,13 +139,16 @@ public final class Repository {
             existing.icon = draft.icon
             existing.color = draft.color
             existing.kind = draft.kind.rawValue
+            if existing.parentId != draft.parentId {
+                // Umgehängt: ans Ende der neuen Geschwister (wie im Web).
+                existing.sortOrder = try nextSortOrder(parentId: draft.parentId, kind: draft.kind, excluding: id)
+            }
+            existing.parentId = draft.parentId
             entity = existing
         } else {
-            let sameKind = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { !$0.softDeleted }))
-                .filter { $0.kind == draft.kind.rawValue }
-            let next = (sameKind.map(\.sortOrder).max() ?? -1) + 1
+            let next = try nextSortOrder(parentId: draft.parentId, kind: draft.kind, excluding: nil)
             entity = CategoryEntity(name: draft.name, icon: draft.icon, color: draft.color,
-                                    kind: draft.kind, sortOrder: next)
+                                    kind: draft.kind, sortOrder: next, parentId: draft.parentId)
             context.insert(entity)
         }
         entity.markDirty()
@@ -145,9 +156,19 @@ public final class Repository {
         return entity
     }
 
+    /// Nächste Position unter den Geschwistern: Unterkategorien derselben Hauptkategorie bzw.
+    /// Hauptkategorien derselben Art.
+    private func nextSortOrder(parentId: UUID?, kind: Kind, excluding id: UUID?) throws -> Int {
+        let siblings = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { !$0.softDeleted }))
+            .filter { $0.id != id && $0.parentId == parentId && (parentId != nil || $0.kind == kind.rawValue) }
+        return (siblings.map(\.sortOrder).max() ?? -1) + 1
+    }
+
     /// Mit nicht gelöschten Buchungen/Regeln: archivieren, sonst Soft-Delete (inkl. Budget der Kategorie).
     public func removeCategory(_ c: CategoryEntity) throws {
         let id = c.id
+        let childCount = try count(FetchDescriptor<CategoryEntity>(predicate: #Predicate { $0.parentId == id && !$0.softDeleted }))
+        if childCount > 0 { throw RepositoryError.hasChildren }
         // Zählfehler werfen (statt als „unbenutzt“ zu gelten und die Kategorie zu löschen).
         let txCount = try count(FetchDescriptor<TransactionEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted }))
         let ruleCount = try count(FetchDescriptor<RecurringRuleEntity>(predicate: #Predicate { $0.categoryId == id && !$0.softDeleted }))

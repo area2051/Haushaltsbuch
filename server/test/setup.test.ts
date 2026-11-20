@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm'
+import { count, eq, isNull } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { hashPassword, verifyPassword } from '../src/auth/passwords.js'
 import { categories, users } from '../src/db/schema.js'
@@ -18,6 +18,16 @@ beforeEach(async () => {
 afterEach(async () => {
   await t.close()
 })
+
+// Symbols offered by the category editor (web/src/domain/icons.ts) plus the two extra default parent icons.
+const VALID_ICONS = [
+  'cart', 'basket', 'fork.knife', 'cup.and.saucer', 'house', 'bolt', 'drop', 'flame',
+  'car', 'fuelpump', 'bus', 'tram', 'bicycle', 'airplane', 'cross.case', 'pills',
+  'heart', 'figure.run', 'tshirt', 'scissors', 'gift', 'gamecontroller', 'film', 'music.note',
+  'book', 'graduationcap', 'pawprint', 'leaf', 'wifi', 'iphone', 'wrench.and.screwdriver',
+  'banknote', 'creditcard', 'eurosign', 'chart.line.uptrend.xyaxis', 'building.columns',
+  'briefcase', 'person.2', 'ellipsis.circle', 'repeat', 'plus.circle',
+]
 
 const body = { username: 'admin', displayName: 'Admin', password: 'geheim123' }
 
@@ -42,7 +52,7 @@ describe('health and setup', () => {
     expect(user).not.toHaveProperty('passwordHash')
     const [row] = await t.db.select().from(users).where(eq(users.id, user.id))
     expect(await verifyPassword(row!.passwordHash, 'geheim123')).toBe(true)
-    const cats = await t.db.select().from(categories).orderBy(categories.sortOrder)
+    const cats = await t.db.select().from(categories).where(isNull(categories.parentId)).orderBy(categories.sortOrder)
     expect(cats).toHaveLength(10)
     expect(cats[0]).toMatchObject({ name: 'Lebensmittel', sortOrder: 0, kind: 'expense', archived: false })
     expect(cats.map((c) => c.name)).toEqual(DEFAULT_CATEGORIES.map((c) => c.name))
@@ -53,6 +63,21 @@ describe('health and setup', () => {
     expect(DEFAULT_CATEGORIES).toHaveLength(10)
     for (const c of DEFAULT_CATEGORIES) expect(c.color).toMatch(/^#[0-9A-Fa-f]{6}$/)
     expect(new Set(DEFAULT_CATEGORIES.map((c) => c.color)).size).toBe(10)
+    // Children share the parent color, so only the ten top-level colors are distinct.
+    const icons = [...DEFAULT_CATEGORIES.map((c) => c.icon), ...DEFAULT_CATEGORIES.flatMap((c) => (c.children ?? []).map((k) => k.icon))]
+    for (const icon of icons) expect(VALID_ICONS).toContain(icon)
+  })
+
+  test('setup creates default subcategories under their parents', async () => {
+    const res = await t.app.inject({ method: 'POST', url: '/setup', payload: body })
+    expect(res.statusCode).toBe(201)
+    const all = await t.db.select().from(categories)
+    expect(all.filter((c) => c.parentId === null)).toHaveLength(10)
+    const children = all.filter((c) => c.parentId !== null)
+    expect(children).toHaveLength(38)
+    const wohnen = all.find((c) => c.name === 'Wohnen')!
+    const strom = all.find((c) => c.name === 'Strom')!
+    expect(strom).toMatchObject({ parentId: wohnen.id, color: wohnen.color, kind: 'expense', icon: 'bolt', sortOrder: 2 })
   })
 
   test('setup twice returns 409 setup_already_done', async () => {
@@ -85,7 +110,7 @@ describe('health and setup', () => {
     const [u] = await t.db.select({ n: count() }).from(users)
     expect(u!.n).toBe(1)
     const [c] = await t.db.select({ n: count() }).from(categories)
-    expect(c!.n).toBe(10)
+    expect(c!.n).toBe(48)
   })
 
   test('setup rejects password shorter than 8', async () => {

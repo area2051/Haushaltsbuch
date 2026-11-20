@@ -115,3 +115,25 @@ private struct RuleFixture {
     #expect(m.validationMessage == "Bitte als Intervall eine Zahl von 1 bis 24 wählen.")
     #expect(!m.canSave)
 }
+
+// MARK: Unterkategorien
+
+@MainActor @Test func ruleOnASubcategoryPreselectsParentAndChip() throws {
+    let f = try RuleFixture()
+    let grund = try f.repo.saveCategory(CategoryDraft(name: "Grundsteuer", icon: "house", color: "#000000", kind: .expense,
+                                                      parentId: f.category.id))
+    let m = f.model()
+    #expect(m.categories.map(\.name) == ["Wohnen"])          // nur Hauptkategorien im Raster
+    m.amount = AmountInput(cents: 8900)
+    m.selectMain(f.category.id)
+    #expect(m.chipOptions.map(\.name) == ["Allgemein", "Grundsteuer"])
+    m.categoryId = grund.id
+    #expect(m.canSave)
+    try m.save()
+    let rule = try #require(try f.rules().first)
+    #expect(rule.categoryId == grund.id)
+
+    let edit = f.model(rule: rule)
+    #expect(edit.mainId == f.category.id)
+    #expect(edit.categoryId == grund.id)
+}

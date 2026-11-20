@@ -91,6 +91,7 @@ final class OverviewUITests: XCTestCase {
         XCTAssertTrue(cat.waitForExistence(timeout: 5), "Kategorie \(category) fehlt")
         waitUntilHittable(cat)
         cat.tap()
+        tapGeneralChipIfShown(app)
         XCTAssertTrue(amount.waitForNonExistence(timeout: 5))
     }
 

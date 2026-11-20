@@ -189,6 +189,7 @@ final class MoreUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["quickEntry.amount"].waitForExistence(timeout: 5))
         for digit in [1, 5, 0] { app.buttons["quickEntry.key.\(digit)"].tap() }
         app.buttons["quickEntry.category.Lebensmittel"].tap()
+        tapGeneralChipIfShown(app)
         Thread.sleep(forTimeInterval: 1)
         openSection(app, "Mehr")
         app.buttons["more.logout"].tap()

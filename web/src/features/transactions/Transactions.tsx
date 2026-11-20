@@ -1,7 +1,7 @@
 import { ListX, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { useData } from '../../app/AppContext'
+import { useCategoryTree, useData } from '../../app/AppContext'
 import { TransactionRow } from '../../components/TransactionRow'
 import { Button } from '../../components/ui/Button'
 import { ChipSelect } from '../../components/ui/ChipSelect'
@@ -30,7 +30,8 @@ export function Transactions() {
   }
 
   const txs = useMemo(() => [...data.transactions.values()], [data.transactions])
-  const list = useMemo(() => sections(txs, filter, data.categories), [txs, filter, data.categories])
+  const tree = useCategoryTree()
+  const list = useMemo(() => sections(txs, filter, tree), [txs, filter, tree])
   const totals = useMemo(() => {
     let income = 0
     let expense = 0
@@ -43,12 +44,14 @@ export function Transactions() {
     return { income, expense, count: list.reduce((n, s) => n + s.items.length, 0) }
   }, [list])
 
+  /** Main categories, each followed by its subcategories. */
   const categories = useMemo(
     () =>
       [...data.categories.values()]
-        .filter((c) => !filter.kind || c.kind === filter.kind)
-        .sort((a, b) => a.kind.localeCompare(b.kind) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
-    [data.categories, filter.kind],
+        .filter((c) => (!filter.kind || c.kind === filter.kind) && tree.rootOf(c.id) === c.id)
+        .sort((a, b) => a.kind.localeCompare(b.kind) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+        .flatMap((c) => [c, ...tree.childrenOf(c.id)]),
+    [data.categories, filter.kind, tree],
   )
   const members = [...data.users.values()].sort((a, b) => a.displayName.localeCompare(b.displayName))
   const months = useMemo(() => Array.from({ length: 24 }, (_, i) => addMonths(monthOf(today()), -i)), [])
@@ -83,7 +86,7 @@ export function Transactions() {
               ]}
             />
             <ChipSelect label="Monat" value={filter.month} onChange={(v) => set({ month: v })} options={months.map((m) => ({ value: m, label: monthTitle(m) }))} />
-            <ChipSelect label="Kategorie" value={filter.categoryId} onChange={(v) => set({ categoryId: v })} options={categories.map((c) => ({ value: c.id, label: c.archived ? `${c.name} (archiviert)` : c.name }))} />
+            <ChipSelect label="Kategorie" value={filter.categoryId} onChange={(v) => set({ categoryId: v })} options={categories.map((c) => ({ value: c.id, label: tree.isSelectable(c) ? tree.labelFor(c.id) : `${tree.labelFor(c.id)} (archiviert)` }))} />
             {members.length > 1 && <ChipSelect label="Person" value={filter.paidBy} onChange={(v) => set({ paidBy: v })} options={members.map((m) => ({ value: m.id, label: m.displayName }))} />}
             {anyFilter && (
               <button onClick={() => set({ ...emptyFilter })} className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-3 text-[14px] font-medium text-accent">
@@ -113,7 +116,7 @@ export function Transactions() {
                   </div>
                   <Tile className="p-2">
                     {s.items.map((t) => (
-                      <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} payerName={data.names.get(t.paidBy)} showPayer={members.length > 1} onClick={() => openEdit(t)} />
+                      <TransactionRow key={t.id} tx={t} category={data.categories.get(t.categoryId)} label={tree.byId.has(t.categoryId) ? tree.labelFor(t.categoryId) : undefined} color={tree.colorFor(t.categoryId)} payerName={data.names.get(t.paidBy)} showPayer={members.length > 1} onClick={() => openEdit(t)} />
                     ))}
                   </Tile>
                 </section>

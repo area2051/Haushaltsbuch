@@ -29,6 +29,9 @@ describe('POST /sync', () => {
     return { admin, token: accessToken }
   }
 
+  // Categories without subcategories (deleting a parent that has children is rejected).
+  const leafCategories = <C extends Row>(cats: C[]) => cats.filter((c) => !cats.some((o) => o.parentId === c.id))
+
   async function addMember(adminToken: string, username = 'anna') {
     const res = await t.app.inject({
       method: 'POST',
@@ -89,7 +92,7 @@ describe('POST /sync', () => {
     const r = await sync(token, 0)
     expect(r.fullResync).toBe(false)
     expect(r.rejected).toEqual([])
-    expect(r.changes.categories).toHaveLength(10)
+    expect(r.changes.categories).toHaveLength(48)
     expect(r.changes.users).toHaveLength(1)
     expect(r.changes.users[0]).toMatchObject({ ...admin, deleted: false })
     expect(r.changes.users[0]).not.toHaveProperty('passwordHash')
@@ -119,7 +122,7 @@ describe('POST /sync', () => {
   test('only changes after lastVersion are returned', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const cat = first.changes.categories[0]!.id
+    const cat = leafCategories(first.changes.categories)[0]!.id
     const record = txn({ categoryId: cat, paidBy: admin.id })
     const pushed = await sync(token, first.currentVersion, { transactions: [record] })
     expect(pushed.changes.categories).toEqual([])
@@ -261,7 +264,7 @@ describe('POST /sync', () => {
   test('deleting a category in use → rejected category_in_use', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const cat = first.changes.categories[0]!
+    const cat = leafCategories(first.changes.categories)[0]!
     await sync(token, 0, { transactions: [txn({ categoryId: cat.id, paidBy: admin.id })] })
     const { version: _v, ...catRecord } = cat
     const r = await sync(token, 0, { categories: [{ ...catRecord, deleted: true }] })
@@ -270,7 +273,7 @@ describe('POST /sync', () => {
     expect(row!.deleted).toBe(false)
 
     // A category referenced only by an active rule is in use as well.
-    const cat2 = first.changes.categories[1]!
+    const cat2 = leafCategories(first.changes.categories)[1]!
     await sync(token, 0, { recurringRules: [rule({ categoryId: cat2.id, paidBy: admin.id })] })
     const { version: _v2, ...cat2Record } = cat2
     const r2 = await sync(token, 0, { categories: [{ ...cat2Record, deleted: true }] })
@@ -280,7 +283,7 @@ describe('POST /sync', () => {
   test('deleting a category together with its last transaction in one push succeeds', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const record = txn({ categoryId: cat.id, paidBy: admin.id })
     await sync(token, 0, { transactions: [record] })
     const r = await sync(token, 0, {
@@ -295,7 +298,7 @@ describe('POST /sync', () => {
   test('deleting a category soft-deletes its active budgets', async () => {
     const { token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const budget = { id: randomUUID(), deleted: false, categoryId: cat.id, monthlyLimitCents: 30000 }
     const withBudget = await sync(token, first.currentVersion, { budgets: [budget] })
     expect(withBudget.rejected).toEqual([])
@@ -311,7 +314,7 @@ describe('POST /sync', () => {
   test('booking on a deleted category restores it as archived', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const del = await sync(token, first.currentVersion, { categories: [{ ...cat, deleted: true }] })
     expect(del.rejected).toEqual([])
     expect(del.changes.categories).toEqual([expect.objectContaining({ id: cat.id, deleted: true })])
@@ -326,7 +329,7 @@ describe('POST /sync', () => {
   test('a rejected record leaves no partial state (category restore is rolled back)', async () => {
     const { token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const del = await sync(token, 0, { categories: [{ ...cat, deleted: true }] })
     const record = txn({ categoryId: cat.id, paidBy: randomUUID() })
     const r = await sync(token, del.currentVersion, { transactions: [record] })
@@ -339,12 +342,12 @@ describe('POST /sync', () => {
   test('lastVersion ahead of server → fullResync with all data', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const cat = first.changes.categories[0]!.id
+    const cat = leafCategories(first.changes.categories)[0]!.id
     const record = txn({ categoryId: cat, paidBy: admin.id })
     const r = await sync(token, first.currentVersion + 1000, { transactions: [record] })
     expect(r.fullResync).toBe(true)
     expect(r.rejected).toEqual([])
-    expect(r.changes.categories).toHaveLength(10)
+    expect(r.changes.categories).toHaveLength(48)
     expect(r.changes.users).toHaveLength(1)
     expect(r.changes.transactions.map((x) => x.id)).toEqual([record.id])
     expect(r.currentVersion).toBeGreaterThan(first.currentVersion)
@@ -367,7 +370,7 @@ describe('POST /sync', () => {
   test('after a backup restore, a client below the resync floor gets fullResync once; others do not', async () => {
     const { admin, token } = await start()
     const before = await sync(token, 0)
-    const cat = before.changes.categories[0]!.id
+    const cat = leafCategories(before.changes.categories)[0]!.id
     // Device B synced before the backup was taken.
     const oldVersion = before.currentVersion
     // Simulate the restore step of docs/betrieb.md (as if a backup taken right now was restored).
@@ -378,7 +381,7 @@ describe('POST /sync', () => {
 
     const resynced = await sync(token, oldVersion)
     expect(resynced.fullResync).toBe(true)
-    expect(resynced.changes.categories).toHaveLength(10)
+    expect(resynced.changes.categories).toHaveLength(48)
     expect(resynced.changes.users).toHaveLength(1)
     // No write since the restore: the floor is the current version, so the next sync is a normal one.
     expect(resynced.currentVersion).toBe(floor)
@@ -454,6 +457,244 @@ describe('POST /sync', () => {
     const r = await sync(token, 0, { budgets: [b1, b2] })
     expect(r.rejected).toEqual([{ table: 'budgets', id: b2.id, reason: 'unique_violation' }])
     expect(r.changes.budgets).toEqual([{ ...b1, version: expect.any(Number) }])
+  })
+
+  function category(over: { parentId?: string | null } & Record<string, unknown> = {}) {
+    return {
+      id: randomUUID(),
+      deleted: false,
+      name: 'Obst',
+      icon: 'cart',
+      color: '#00AA00',
+      kind: 'expense' as const,
+      sortOrder: 0,
+      archived: false,
+      ...over,
+    }
+  }
+
+  test('category parentId round-trips and defaults to null', async () => {
+    const { token } = await start()
+    const parent = category({ name: 'Lebensmittel' })
+    const r1 = await sync(token, 0, { categories: [parent] })
+    expect(r1.rejected).toEqual([])
+    expect(r1.changes.categories.find((c) => c.id === parent.id)).toMatchObject({ parentId: null })
+
+    const child = category({ parentId: parent.id })
+    const r2 = await sync(token, 0, { categories: [child] })
+    expect(r2.rejected).toEqual([])
+    expect(r2.changes.categories.find((c) => c.id === child.id)).toMatchObject({ parentId: parent.id })
+  })
+
+  test('push without parentId keeps the stored parent', async () => {
+    const { token } = await start()
+    const parent = category({ name: 'Lebensmittel' })
+    const child = category({ parentId: parent.id })
+    await sync(token, 0, { categories: [parent, child] })
+    const { parentId: _p, ...oldApp } = child
+    const r = await sync(token, 0, { categories: [{ ...oldApp, name: 'Gemüse' }] })
+    expect(r.rejected).toEqual([])
+    expect(r.changes.categories.find((c) => c.id === child.id)).toMatchObject({ name: 'Gemüse', parentId: parent.id })
+  })
+
+  test('push with explicit parentId null clears the parent', async () => {
+    const { token } = await start()
+    const parent = category({ name: 'Lebensmittel' })
+    const child = category({ parentId: parent.id })
+    await sync(token, 0, { categories: [parent, child] })
+    const r = await sync(token, 0, { categories: [{ ...child, parentId: null }] })
+    expect(r.rejected).toEqual([])
+    expect(r.changes.categories.find((c) => c.id === child.id)).toMatchObject({ parentId: null })
+  })
+
+  describe('subcategories', () => {
+    const rejectedAs = (r: SyncResult, id: string, reason: string) =>
+      expect(r.rejected).toEqual([{ table: 'categories', id, reason }])
+
+    async function storedCategory(id: string) {
+      const [row] = await t.db.select().from(categories).where(eq(categories.id, id))
+      return row!
+    }
+
+    async function withParentAndChild(token: string) {
+      const parent = category({ name: 'Wohnen' })
+      const child = category({ name: 'Strom', parentId: parent.id })
+      const r = await sync(token, 0, { categories: [parent, child] })
+      expect(r.rejected).toEqual([])
+      return { parent, child }
+    }
+
+    const budget = (categoryId: string, monthlyLimitCents = 30000) => ({
+      id: randomUUID(),
+      deleted: false,
+      categoryId,
+      monthlyLimitCents,
+    })
+
+    test('rejects parent that does not exist or is deleted', async () => {
+      const { token } = await start()
+      const missing = category({ parentId: randomUUID() })
+      rejectedAs(await sync(token, 0, { categories: [missing] }), missing.id, 'invalid_parent')
+
+      const parent = category({ name: 'Alt' })
+      await sync(token, 0, { categories: [parent] })
+      await sync(token, 0, { categories: [{ ...parent, deleted: true }] })
+      const child = category({ parentId: parent.id })
+      rejectedAs(await sync(token, 0, { categories: [child] }), child.id, 'invalid_parent')
+    })
+
+    test('rejects parent that itself has a parent', async () => {
+      const { token } = await start()
+      const { child } = await withParentAndChild(token)
+      const grandchild = category({ parentId: child.id })
+      rejectedAs(await sync(token, 0, { categories: [grandchild] }), grandchild.id, 'invalid_parent')
+    })
+
+    test('rejects parent of the other kind', async () => {
+      const { token } = await start()
+      const parent = category({ name: 'Gehalt', kind: 'income' })
+      await sync(token, 0, { categories: [parent] })
+      const child = category({ parentId: parent.id })
+      rejectedAs(await sync(token, 0, { categories: [child] }), child.id, 'invalid_parent')
+    })
+
+    test('rejects giving a parent to a category that has children', async () => {
+      const { token } = await start()
+      const { parent } = await withParentAndChild(token)
+      const other = category({ name: 'Haushalt' })
+      await sync(token, 0, { categories: [other] })
+      rejectedAs(await sync(token, 0, { categories: [{ ...parent, parentId: other.id }] }), parent.id, 'invalid_parent')
+      expect((await storedCategory(parent.id)).parentId).toBeNull()
+    })
+
+    test('rejects changing kind of a category with children', async () => {
+      const { token } = await start()
+      const { parent } = await withParentAndChild(token)
+      rejectedAs(await sync(token, 0, { categories: [{ ...parent, kind: 'income' }] }), parent.id, 'invalid_parent')
+      expect((await storedCategory(parent.id)).kind).toBe('expense')
+    })
+
+    test('rejects self as parent', async () => {
+      const { token } = await start()
+      const cat = category()
+      await sync(token, 0, { categories: [cat] })
+      rejectedAs(await sync(token, 0, { categories: [{ ...cat, parentId: cat.id }] }), cat.id, 'invalid_parent')
+    })
+
+    test('rejects deleting a category with active children', async () => {
+      const { token } = await start()
+      const { parent, child } = await withParentAndChild(token)
+      rejectedAs(
+        await sync(token, 0, { categories: [{ ...parent, deleted: true }] }),
+        parent.id,
+        'category_has_children',
+      )
+      expect((await storedCategory(parent.id)).deleted).toBe(false)
+
+      expect((await sync(token, 0, { categories: [{ ...child, deleted: true }] })).rejected).toEqual([])
+      expect((await sync(token, 0, { categories: [{ ...parent, deleted: true }] })).rejected).toEqual([])
+      expect((await storedCategory(parent.id)).deleted).toBe(true)
+    })
+
+    test('accepts parent and child in one push in any order', async () => {
+      const { token } = await start()
+      const parent = category({ name: 'Wohnen' })
+      const child = category({ name: 'Strom', parentId: parent.id })
+      const r = await sync(token, 0, { categories: [child, parent] })
+      expect(r.rejected).toEqual([])
+      expect((await storedCategory(child.id)).parentId).toBe(parent.id)
+    })
+
+    test('deletes child and parent in one push in any order', async () => {
+      const { token } = await start()
+      const { parent, child } = await withParentAndChild(token)
+      const r = await sync(token, 0, {
+        categories: [
+          { ...parent, deleted: true },
+          { ...child, deleted: true },
+        ],
+      })
+      expect(r.rejected).toEqual([])
+      expect((await storedCategory(parent.id)).deleted).toBe(true)
+      expect((await storedCategory(child.id)).deleted).toBe(true)
+    })
+
+    test('rejects budget on a subcategory', async () => {
+      const { token } = await start()
+      const { child } = await withParentAndChild(token)
+      const b = budget(child.id)
+      const r = await sync(token, 0, { budgets: [b] })
+      expect(r.rejected).toEqual([{ table: 'budgets', id: b.id, reason: 'budget_on_subcategory' }])
+      expect(await t.db.select().from(budgets)).toEqual([])
+    })
+
+    test('moving a budgeted category under a parent without budget moves the budget', async () => {
+      const { token } = await start()
+      const parent = category({ name: 'Wohnen' })
+      const cat = category({ name: 'Strom' })
+      const b = budget(cat.id)
+      const before = await sync(token, 0, { categories: [parent, cat], budgets: [b] })
+      expect(before.rejected).toEqual([])
+
+      const r = await sync(token, before.currentVersion, { categories: [{ ...cat, parentId: parent.id }] })
+      expect(r.rejected).toEqual([])
+      expect(r.changes.budgets).toEqual([{ ...b, categoryId: parent.id, version: expect.any(Number) }])
+      expect(r.changes.budgets[0]!.version).toBeGreaterThan(before.currentVersion)
+    })
+
+    test('moving a budgeted category under a parent with budget deletes its budget', async () => {
+      const { token } = await start()
+      const parent = category({ name: 'Wohnen' })
+      const cat = category({ name: 'Strom' })
+      const parentBudget = budget(parent.id, 100000)
+      const catBudget = budget(cat.id)
+      const before = await sync(token, 0, { categories: [parent, cat], budgets: [parentBudget, catBudget] })
+      expect(before.rejected).toEqual([])
+
+      const r = await sync(token, before.currentVersion, { categories: [{ ...cat, parentId: parent.id }] })
+      expect(r.rejected).toEqual([])
+      expect(r.changes.budgets).toEqual([{ ...catBudget, deleted: true, version: expect.any(Number) }])
+      const active = await t.db.select().from(budgets).where(eq(budgets.deleted, false))
+      expect(active.map((x) => x.id)).toEqual([parentBudget.id])
+    })
+
+    test('transaction on a deleted subcategory revives it and its deleted parent', async () => {
+      const { admin, token } = await start()
+      const { parent, child } = await withParentAndChild(token)
+      const del = await sync(token, 0, {
+        categories: [
+          { ...child, deleted: true },
+          { ...parent, deleted: true },
+        ],
+      })
+      expect(del.rejected).toEqual([])
+
+      const r = await sync(token, del.currentVersion, { transactions: [txn({ categoryId: child.id, paidBy: admin.id })] })
+      expect(r.rejected).toEqual([])
+      expect(r.changes.categories.map((c) => c.id).sort()).toEqual([parent.id, child.id].sort())
+      for (const c of r.changes.categories) expect(c).toMatchObject({ deleted: false, archived: true })
+    })
+
+    test.each([
+      ['moved under another category', (parent: ReturnType<typeof category>, other: ReturnType<typeof category>) => ({ ...parent, parentId: other.id })],
+      ['changed kind', (parent: ReturnType<typeof category>) => ({ ...parent, kind: 'income' as const })],
+    ])('reviving a subcategory whose parent was %s brings it back as top-level', async (_label, changeParent) => {
+      const { admin, token } = await start()
+      const { parent, child } = await withParentAndChild(token)
+      const other = category({ name: 'Haushalt' })
+      const setup = await sync(token, 0, { categories: [other, { ...child, deleted: true }] })
+      expect(setup.rejected).toEqual([])
+      const changed = await sync(token, 0, { categories: [changeParent(parent, other)] })
+      expect(changed.rejected).toEqual([])
+
+      const r = await sync(token, changed.currentVersion, {
+        transactions: [txn({ categoryId: child.id, paidBy: admin.id })],
+      })
+      expect(r.rejected).toEqual([])
+      expect(r.changes.categories).toEqual([
+        expect.objectContaining({ id: child.id, deleted: false, archived: true, parentId: null }),
+      ])
+    })
   })
 
   test('new recurring rule gets nextDueDate = startDate', async () => {

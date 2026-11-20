@@ -20,3 +20,9 @@ test('object prototype keys are not treated as known codes', () => {
   expect(rejectionText('constructor')).toBe(rejectionText('something_new'))
   expect(apiErrorText('toString')).toBe(apiErrorText('something_new'))
 })
+
+test('the subcategory rejection codes have German texts', () => {
+  expect(rejectionText('invalid_parent')).toBe('Diese Zuordnung ist nicht möglich (nur eine Ebene, gleiche Art).')
+  expect(rejectionText('category_has_children')).toBe('Die Kategorie hat noch Unterkategorien.')
+  expect(rejectionText('budget_on_subcategory')).toBe('Budgets gibt es nur für Hauptkategorien.')
+})

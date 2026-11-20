@@ -7,6 +7,7 @@ import HaushaltsbuchData
 private let logger = Logger(subsystem: "de.haushaltsbuch.app", category: "categories")
 
 /// Kategorien je Art: bearbeiten, anlegen, verschieben, entfernen (archivieren oder löschen).
+/// Unterkategorien stehen eingerückt unter ihrer Hauptkategorie.
 struct CategoriesView: View {
     @Environment(AppModel.self) private var app
     @Query(filter: #Predicate<CategoryEntity> { !$0.softDeleted }, sort: \CategoryEntity.sortOrder)
@@ -18,13 +19,17 @@ struct CategoriesView: View {
     @State private var rejected: CategoryEntity?
     @State private var errorMessage: String?
 
-    private var ofKind: [CategoryEntity] {
-        all.filter { !$0.deleted && $0.kindValue == kind }
+    private var values: [CategoryValue] { all.filter { !$0.deleted }.map(\.value) }
+    private var byId: [UUID: CategoryEntity] {
+        Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
-    private var active: [CategoryEntity] { ofKind.filter { !$0.archived } }
-    private var archived: [CategoryEntity] { ofKind.filter(\.archived) }
 
     var body: some View {
+        let values = values
+        let tree = CategoryTree(values)
+        let byId = byId
+        let rows = CategoryList.activeRows(values, kind: kind)
+        let archived = CategoryList.archived(values, kind: kind).compactMap { byId[$0.id] }
         List {
             Section {
                 Picker("Art", selection: $kind) {
@@ -36,26 +41,38 @@ struct CategoriesView: View {
                 .listRowInsets(EdgeInsets())
             }
             Section {
-                ForEach(active) { c in
-                    Button { open(c) } label: { CategoryRow(category: c) }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("categories.row")
-                        .swipeActions {
-                            Button("Entfernen", role: .destructive) { remove(c) }
+                ForEach(rows) { row in
+                    if let c = byId[row.id] {
+                        Button { open(c) } label: {
+                            CategoryRow(category: c, label: c.name, colorHex: tree.byId[tree.rootOf(c.id)]?.color ?? c.color)
+                                .padding(.leading, row.isChild ? 28 : 0)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier(row.isChild ? "categories.subrow" : "categories.row")
+                        .swipeActions {
+                            if CategoryForm.hasChildren(c.id, in: values) {
+                                Button(CategoryForm.removalBlockedText) {}
+                                    .disabled(true)
+                            } else {
+                                Button("Entfernen", role: .destructive) { remove(c) }
+                            }
+                        }
+                    }
                 }
-                .onMove(perform: move)
+                .onMove { move(rows, from: $0, to: $1, archived: archived) }
             } footer: {
-                Text("Entfernen archiviert Kategorien mit Buchungen oder wiederkehrenden Buchungen; unbenutzte werden gelöscht.")
+                Text("Entfernen archiviert Kategorien mit Buchungen oder wiederkehrenden Buchungen; unbenutzte werden gelöscht. Hauptkategorien mit Unterkategorien lassen sich erst entfernen, wenn diese entfernt sind.")
             }
             if !archived.isEmpty {
                 Section("Archiviert") {
                     ForEach(archived) { c in
+                        let row = CategoryRow(category: c, label: tree.label(c.id),
+                                              colorHex: tree.byId[tree.rootOf(c.id)]?.color ?? c.color)
                         if c.rejectionReason != nil {
-                            Button { rejected = c } label: { CategoryRow(category: c).foregroundStyle(.secondary) }
+                            Button { rejected = c } label: { row.foregroundStyle(.secondary) }
                                 .buttonStyle(.plain)
                         } else {
-                            CategoryRow(category: c).foregroundStyle(.secondary)
+                            row.foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -103,11 +120,12 @@ struct CategoriesView: View {
         }
     }
 
-    private func move(from source: IndexSet, to destination: Int) {
-        var ordered = active
-        ordered.move(fromOffsets: source, toOffset: destination)
+    private func move(_ rows: [CategoryList.Row], from source: IndexSet, to destination: Int, archived: [CategoryEntity]) {
+        // Unterkategorien nur innerhalb ihrer Hauptkategorie verschieben.
+        guard let ids = CategoryList.reordered(rows, from: source, to: destination) else { return }
+        let byId = byId
         do {
-            try app.repository.moveCategories(ordered + archived)
+            try app.repository.moveCategories(ids.compactMap { byId[$0] } + archived)
         } catch {
             logger.error("Verschieben fehlgeschlagen: \(String(describing: error), privacy: .public)")
             message = "Die Reihenfolge konnte nicht gespeichert werden."
@@ -118,6 +136,8 @@ struct CategoriesView: View {
         do {
             try app.repository.removeCategory(c)
             message = CategoryForm.removalMessage(archived: c.archived && !c.deleted)
+        } catch RepositoryError.hasChildren {
+            errorMessage = CategoryForm.removalBlockedText
         } catch {
             logger.error("Entfernen fehlgeschlagen: \(String(describing: error), privacy: .public)")
             message = "Die Kategorie konnte nicht entfernt werden."
@@ -139,15 +159,19 @@ enum CategorySheet: Identifiable {
 
 struct CategoryRow: View {
     let category: CategoryEntity
+    /// Name bzw. „Wohnen · Strom“.
+    let label: String
+    /// Farbe der Hauptkategorie (Unterkategorien zeigen sie).
+    let colorHex: String
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: category.icon)
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Color(hex: category.color)))
+                .background(Circle().fill(Color(hex: colorHex)))
                 .accessibilityHidden(true)
-            Text(category.name)
+            Text(label)
             Spacer(minLength: 0)
             if let reason = category.rejectionReason {
                 Image(systemName: "exclamationmark.triangle.fill")

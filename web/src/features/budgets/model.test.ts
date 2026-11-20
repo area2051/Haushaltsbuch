@@ -35,3 +35,10 @@ test('removing a budget soft-deletes it', () => {
   const existing = budget('a', 1000)
   expect(removedBudget(existing)).toEqual({ id: existing.id, categoryId: 'a', monthlyLimitCents: 1000, deleted: true })
 })
+
+test('rows are main categories only; spending includes children', () => {
+  const cats = [cat('home'), cat('power', 'expense', { parentId: 'home' })]
+  const rows = budgetRows(cats, [budget('home', 1000)], [tx(300, '2026-11-01', { categoryId: 'home' }), tx(200, '2026-11-02', { categoryId: 'power' })], M)
+  expect(rows.items.map((r) => [r.category.id, r.spentCents])).toEqual([['home', 500]])
+  expect(rows.total).toEqual({ limitCents: 1000, spentCents: 500 })
+})

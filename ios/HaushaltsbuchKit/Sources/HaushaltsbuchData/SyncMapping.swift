@@ -68,13 +68,15 @@ extension CategoryEntity: SyncEntity {
         kind = r.kind.rawValue
         sortOrder = r.sortOrder
         archived = r.archived
+        parentId = r.parentId.flatMap { UUID(uuidString: $0) }
         markSynced(version: r.version, deleted: r.deleted)
         return true
     }
 
     var syncRecord: Record {
         Record(archived: archived, color: color, deleted: deleted, icon: icon, id: id.wire,
-               kind: Record.kindPayload(rawValue: kind) ?? .expense, name: name, sortOrder: sortOrder)
+               kind: Record.kindPayload(rawValue: kind) ?? .expense, name: name, parentId: parentId?.wire,
+               sortOrder: sortOrder)
     }
 }
 

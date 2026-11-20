@@ -73,21 +73,19 @@ private struct QuickEntryContent: View {
 
                 KeypadView(amount: $model.amount)
 
-                CategoryGridView(categories: model.categories, enabled: model.canSave) { category in
-                    errorMessage = nil
-                    do {
-                        try model.save(category: category.id)
-                        onSaved()
-                    } catch {
-                        logger.error("Speichern fehlgeschlagen: \(String(describing: error), privacy: .public)")
-                        if case let RepositoryError.invalid(message) = error {
-                            errorMessage = message
-                        } else {
-                            errorMessage = model.repeatRhythm == nil
-                                ? "Die Buchung konnte nicht gespeichert werden."
-                                : "Die wiederkehrende Buchung konnte nicht gespeichert werden."
-                        }
+                CategoryGridView(categories: model.categories, enabled: model.canSave,
+                                 selectedId: model.chipParentId) { category in
+                    attempt { try model.tapCategory(category.id) }
+                }
+
+                if !model.chipOptions.isEmpty {
+                    // Ein Chip-Tipp speichert sofort („Allgemein“ = die Hauptkategorie selbst).
+                    SubcategoryChipsView(options: model.chipOptions, selectedId: nil,
+                                         caption: "Unterkategorie antippen zum Speichern") { id in
+                        attempt { try model.save(category: id); return true }
                     }
+                    .disabled(!model.canSave)
+                    .opacity(model.canSave ? 1 : 0.4)
                 }
 
                 if let errorMessage {
@@ -100,6 +98,23 @@ private struct QuickEntryContent: View {
             .padding(.bottom)
             .frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Führt einen Speicherversuch aus; `true` aus `action` = gespeichert, Sheet schließen.
+    private func attempt(_ action: () throws -> Bool) {
+        errorMessage = nil
+        do {
+            if try action() { onSaved() }
+        } catch {
+            logger.error("Speichern fehlgeschlagen: \(String(describing: error), privacy: .public)")
+            if case let RepositoryError.invalid(message) = error {
+                errorMessage = message
+            } else {
+                errorMessage = model.repeatRhythm == nil
+                    ? "Die Buchung konnte nicht gespeichert werden."
+                    : "Die wiederkehrende Buchung konnte nicht gespeichert werden."
+            }
         }
     }
 
