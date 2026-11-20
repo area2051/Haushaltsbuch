@@ -50,6 +50,7 @@ final class EndToEndUITests: XCTestCase {
         let cat = app.buttons["quickEntry.category.Lebensmittel"]
         waitUntilHittable(cat)
         cat.tap()
+        tapGeneralChipIfShown(app)
         XCTAssertTrue(amount.waitForNonExistence(timeout: 5), "Sheet schließt nicht")
         Thread.sleep(forTimeInterval: 1)
         if env["HB_EXPECT_OFFLINE"] != nil {
@@ -156,6 +157,7 @@ final class EndToEndUITests: XCTestCase {
             XCTAssertTrue(amount.waitForExistence(timeout: 5), "Sheet öffnet nicht")
             for k in keyFrames { k.tap() }
             catFrame.tap()
+            tapGeneralChipIfShown(app)   // Lebensmittel hat Unterkategorien: ein Tipp mehr
             XCTAssertTrue(amount.waitForNonExistence(timeout: 5), "Sheet schließt nach dem Kategorie-Tipp nicht")
             stopMeasuring()
         }

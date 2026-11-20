@@ -22,20 +22,18 @@ struct TransactionListView: View {
     @State private var rejected: TransactionEntity?
     @State private var errorMessage: String?
 
-    private var categories: [UUID: CategoryValue] {
-        Dictionary(categoryEntities.map { ($0.id, $0.value) }, uniquingKeysWith: { a, _ in a })
-    }
+    private var tree: CategoryTree { CategoryTree(categoryEntities.map(\.value)) }
 
     private var memberNames: [UUID: String] {
         Dictionary(members.map { ($0.id, $0.displayName) }, uniquingKeysWith: { a, _ in a })
     }
 
     var body: some View {
-        let categories = categories
+        let tree = tree
         let names = memberNames
         let byId = Dictionary(entities.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let sections = TransactionListModel.sections(
-            TransactionListModel.activeValues(of: entities), filter: filter, categories: categories)
+            TransactionListModel.activeValues(of: entities), filter: filter, tree: tree)
         let today = CalendarDay.today()
 
         List {
@@ -43,7 +41,7 @@ struct TransactionListView: View {
                 Section(TransactionListModel.header(for: section.day, today: today)) {
                     ForEach(section.items, id: \.id) { tx in
                         if let entity = byId[tx.id] {
-                            row(tx, entity: entity, categories: categories, names: names)
+                            row(tx, entity: entity, tree: tree, names: names)
                         }
                     }
                 }
@@ -62,7 +60,7 @@ struct TransactionListView: View {
         .refreshable { await app.pullToRefresh() }
         .searchable(text: $filter.search, prompt: "Suchen")
         .navigationTitle("Buchungen")
-        .toolbar { ToolbarItem(placement: .secondaryAction) { filterMenu(categories: categories) } }
+        .toolbar { ToolbarItem(placement: .secondaryAction) { filterMenu(tree: tree) } }
         .sheet(item: $editing) { entity in
             TransactionEditView(transaction: entity)
         }
@@ -82,12 +80,12 @@ struct TransactionListView: View {
         }
     }
 
-    private func row(_ tx: TxValue, entity: TransactionEntity, categories: [UUID: CategoryValue],
+    private func row(_ tx: TxValue, entity: TransactionEntity, tree: CategoryTree,
                      names: [UUID: String]) -> some View {
         Button {
             if entity.rejectionReason != nil { rejected = entity } else { editing = entity }
         } label: {
-            TransactionRow(tx: tx, category: categories[tx.categoryId], payerName: names[tx.paidBy],
+            TransactionRow(tx: tx, tree: tree, payerName: names[tx.paidBy],
                            rejectionReason: entity.rejectionReason)
         }
         .buttonStyle(.plain)
@@ -101,8 +99,8 @@ struct TransactionListView: View {
         .accessibilityIdentifier("transactions.row")
     }
 
-    private func filterMenu(categories: [UUID: CategoryValue]) -> some View {
-        let sortedCategories = categories.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    private func filterMenu(tree: CategoryTree) -> some View {
+        let options = TransactionListModel.filterOptions(tree)
         return Menu {
             Picker("Art", selection: $filter.kind) {
                 Text("Alle").tag(Kind?.none)
@@ -111,7 +109,7 @@ struct TransactionListView: View {
             }
             Picker("Kategorie", selection: $filter.categoryId) {
                 Text("Alle").tag(UUID?.none)
-                ForEach(sortedCategories, id: \.id) { Text($0.name).tag(UUID?.some($0.id)) }
+                ForEach(options, id: \.id) { Text($0.label).tag(UUID?.some($0.id)) }
             }
             Picker("Person", selection: $filter.paidBy) {
                 Text("Alle").tag(UUID?.none)

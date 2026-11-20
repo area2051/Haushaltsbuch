@@ -20,12 +20,12 @@ struct RecurringRulesView: View {
     @State private var rejected: RecurringRuleEntity?
 
     var body: some View {
-        let byId = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let tree = CategoryTree(categories.map(\.value))
         List {
             ForEach(rules.filter { !$0.deleted }) { rule in
                 Button {
                     if rule.rejectionReason != nil { rejected = rule } else { editing = .edit(rule) }
-                } label: { RuleRow(rule: rule, category: byId[rule.categoryId]) }
+                } label: { RuleRow(rule: rule, tree: tree) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("rules.row")
                     .swipeActions {
@@ -104,7 +104,11 @@ enum RuleSheet: Identifiable {
 
 private struct RuleRow: View {
     let rule: RecurringRuleEntity
-    let category: CategoryEntity?
+    let tree: CategoryTree
+
+    private var category: CategoryValue? { tree.byId[rule.categoryId] }
+    /// „Wohnen · Strom“; `nil` bei unbekannter Kategorie.
+    private var label: String? { category.map { tree.label($0.id) } }
 
     private var period: String {
         var text = "\(rule.rhythm.label) ab \(RuleFormat.date(rule.startDay))"
@@ -117,17 +121,17 @@ private struct RuleRow: View {
             Image(systemName: category?.icon ?? "questionmark")
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
-                .background(Circle().fill(Color(hex: category?.color ?? "#9E9E9E")))
+                .background(Circle().fill(Color(hex: tree.byId[tree.rootOf(rule.categoryId)]?.color ?? "#9E9E9E")))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(rule.note ?? category?.name ?? "Unbekannt").font(.body)
+                    Text(rule.note ?? label ?? "Unbekannt").font(.body)
                     Spacer()
                     Text(Money.formatSigned(cents: rule.amountCents, kind: rule.kindValue))
                         .monospacedDigit()
                         .foregroundStyle(rule.kindValue == .income ? .green : .primary)
                 }
-                if rule.note != nil, let name = category?.name {
+                if rule.note != nil, let name = label {
                     Text(name).font(.caption).foregroundStyle(.secondary)
                 }
                 Text(period).font(.caption).foregroundStyle(.secondary)

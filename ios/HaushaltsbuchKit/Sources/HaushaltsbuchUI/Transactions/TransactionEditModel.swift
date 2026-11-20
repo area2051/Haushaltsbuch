@@ -24,8 +24,9 @@ final class TransactionEditModel {
     var paidBy: UUID
     var note: String
 
-    private(set) var allCategories: [CategoryValue]
     private(set) var members: [MemberEntity]
+    /// Kategorien (nicht gelöscht); die ursprüngliche bleibt wählbar, auch archiviert.
+    private let choice: CategoryChoice
 
     @ObservationIgnored private let transaction: TransactionEntity
     @ObservationIgnored private let repository: Repository
@@ -43,14 +44,22 @@ final class TransactionEditModel {
         self.day = transaction.calendarDay
         self.paidBy = transaction.paidBy
         self.note = transaction.note ?? ""
-        self.allCategories = repository.activeCategories().map(\.value)
+        self.choice = CategoryChoice(repository.activeCategories().map(\.value), keep: transaction.categoryId)
         self.members = repository.activeMembers()
     }
 
-    /// Nicht archivierte Kategorien der gewählten Art; die ursprüngliche bleibt wählbar, auch archiviert.
-    var categories: [CategoryValue] {
-        allCategories.filter { $0.kind == kind && (!$0.archived || $0.id == originalCategoryId) }
-            .sorted { $0.sortOrder < $1.sortOrder }
+    /// Hauptkategorien der gewählten Art fürs Raster; Unterkategorien wählen die Chips.
+    var categories: [CategoryValue] { choice.mains(kind: kind) }
+
+    /// Im Raster markierte Hauptkategorie.
+    var mainId: UUID? { categoryId.map(choice.tree.rootOf) }
+
+    /// „Allgemein“ + Unterkategorien der gewählten Hauptkategorie; ein Tipp setzt nur `categoryId`.
+    var chipOptions: [SubcategoryOption] { mainId.map(choice.chips(for:)) ?? [] }
+
+    /// Andere Hauptkategorie: beginnt bei „Allgemein“; dieselbe: Unterkategorie bleibt.
+    func selectMain(_ id: UUID) {
+        if id != mainId { categoryId = id }
     }
 
     /// Mitglieder; der zugeordnete Zahler und der angemeldete Benutzer sind immer enthalten.
@@ -67,7 +76,7 @@ final class TransactionEditModel {
 
     var canSave: Bool {
         guard amount.isValid, let categoryId else { return false }
-        return categories.contains { $0.id == categoryId }
+        return choice.isValid(categoryId, kind: kind)
     }
 
     func save() throws {
@@ -83,8 +92,7 @@ final class TransactionEditModel {
     }
 
     private func kindChanged() {
-        let ids = Set(categories.map(\.id))
-        if let id = categoryId, ids.contains(id) { return }
-        categoryId = ids.contains(originalCategoryId) ? originalCategoryId : nil
+        if let id = categoryId, choice.isValid(id, kind: kind) { return }
+        categoryId = choice.isValid(originalCategoryId, kind: kind) ? originalCategoryId : nil
     }
 }

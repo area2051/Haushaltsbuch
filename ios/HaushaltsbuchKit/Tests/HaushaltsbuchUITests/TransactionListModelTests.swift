@@ -11,11 +11,18 @@ private let foodId = UUID()
 private let rentId = UUID()
 private let salaryId = UUID()
 
-private let categories: [UUID: CategoryValue] = [
-    foodId: CategoryValue(id: foodId, name: "Lebensmittel", icon: "cart", color: "#4CAF50", kind: .expense, sortOrder: 0, archived: false),
-    rentId: CategoryValue(id: rentId, name: "Wohnen", icon: "house", color: "#795548", kind: .expense, sortOrder: 1, archived: false),
-    salaryId: CategoryValue(id: salaryId, name: "Gehalt", icon: "banknote", color: "#009688", kind: .income, sortOrder: 0, archived: false),
-]
+private let powerId = UUID()
+private let waterId = UUID()
+
+private let categories = CategoryTree([
+    CategoryValue(id: foodId, name: "Lebensmittel", icon: "cart", color: "#4CAF50", kind: .expense, sortOrder: 0, archived: false),
+    CategoryValue(id: rentId, name: "Wohnen", icon: "house", color: "#795548", kind: .expense, sortOrder: 1, archived: false),
+    CategoryValue(id: salaryId, name: "Gehalt", icon: "banknote", color: "#009688", kind: .income, sortOrder: 0, archived: false),
+    CategoryValue(id: powerId, name: "Strom", icon: "bolt", color: "#795548", kind: .expense, sortOrder: 0, archived: false,
+                  parentId: rentId),
+    CategoryValue(id: waterId, name: "Wasser", icon: "drop", color: "#795548", kind: .expense, sortOrder: 1, archived: false,
+                  parentId: rentId),
+])
 
 private func tx(_ cents: Int, _ day: Int, cat: UUID = foodId, kind: Kind = .expense, by: UUID = anna,
                 note: String? = nil) -> TxValue {
@@ -25,7 +32,7 @@ private func tx(_ cents: Int, _ day: Int, cat: UUID = foodId, kind: Kind = .expe
 
 @Test func groupsByDayDescending() {
     let a = tx(100, 1), b = tx(200, 2), c = tx(300, 2), d = tx(400, 30)
-    let sections = TransactionListModel.sections([a, b, d, c], filter: TransactionFilter(), categories: categories)
+    let sections = TransactionListModel.sections([a, b, d, c], filter: TransactionFilter(), tree: categories)
     #expect(sections.map(\.day.day) == [30, 2, 1])
     #expect(sections[1].items.map(\.amountCents) == [200, 300])
 }
@@ -36,7 +43,7 @@ private func tx(_ cents: Int, _ day: Int, cat: UUID = foodId, kind: Kind = .expe
     let other = tx(300, 3, cat: rentId, note: "Miete")
     let all = [withNote, byCategory, other]
     func ids(_ s: String) -> [Int] {
-        TransactionListModel.sections(all, filter: TransactionFilter(search: s), categories: categories)
+        TransactionListModel.sections(all, filter: TransactionFilter(search: s), tree: categories)
             .flatMap(\.items).map(\.amountCents).sorted()
     }
     #expect(ids("wochen") == [100])
@@ -52,7 +59,7 @@ private func tx(_ cents: Int, _ day: Int, cat: UUID = foodId, kind: Kind = .expe
     let c = tx(300, 1, cat: salaryId, kind: .income, by: anna)
     let all = [a, b, c]
     func amounts(_ f: TransactionFilter) -> [Int] {
-        TransactionListModel.sections(all, filter: f, categories: categories).flatMap(\.items).map(\.amountCents).sorted()
+        TransactionListModel.sections(all, filter: f, tree: categories).flatMap(\.items).map(\.amountCents).sorted()
     }
     #expect(amounts(TransactionFilter(paidBy: anna)) == [100, 300])
     #expect(amounts(TransactionFilter(categoryId: rentId)) == [200])
@@ -72,8 +79,33 @@ private func tx(_ cents: Int, _ day: Int, cat: UUID = foodId, kind: Kind = .expe
     let values = TransactionListModel.activeValues(of: [keep, gone])
     #expect(values.map(\.amountCents) == [100])
     let sections = TransactionListModel.sections(values, filter: TransactionFilter(),
-                                                 categories: [cat.id: cat.value])
+                                                 tree: CategoryTree([cat.value]))
     #expect(sections.flatMap(\.items).map(\.amountCents) == [100])
+}
+
+@Test func categoryFilterParentMatchesItsChildrenAChildOnlyItself() {
+    let all = [tx(1, 2, cat: rentId), tx(2, 2, cat: powerId), tx(3, 2, cat: waterId), tx(4, 2, cat: foodId)]
+    func only(_ id: UUID) -> [Int] {
+        TransactionListModel.sections(all, filter: TransactionFilter(categoryId: id), tree: categories)
+            .flatMap(\.items).map(\.amountCents).sorted()
+    }
+    #expect(only(rentId) == [1, 2, 3])
+    #expect(only(powerId) == [2])
+}
+
+@Test func searchMatchesTheLabelOfASubcategoryBooking() {
+    let all = [tx(2, 2, cat: powerId), tx(4, 2, cat: foodId)]
+    func hits(_ q: String) -> [Int] {
+        TransactionListModel.sections(all, filter: TransactionFilter(search: q), tree: categories)
+            .flatMap(\.items).map(\.amountCents)
+    }
+    #expect(hits("strom") == [2])
+    #expect(hits("Wohnen · Strom") == [2])
+}
+
+@Test func filterOptionsAreLabelsSortedByName() {
+    #expect(TransactionListModel.filterOptions(categories).map(\.label)
+            == ["Gehalt", "Lebensmittel", "Wohnen", "Wohnen · Strom", "Wohnen · Wasser"])
 }
 
 @Test func dayHeaderFormat() {
@@ -210,4 +242,80 @@ private struct EditFixture {
     #expect(RejectionText.german("invalid_value") == "Ungültiger Wert.")
     #expect(RejectionText.german("amount_cents must be > 0") == "Vom Server abgelehnt.")
     #expect(RejectionText.german(nil) == "Vom Server abgelehnt.")
+}
+
+// MARK: Bearbeiten mit Unterkategorien
+
+@MainActor
+private struct SubEditFixture {
+    let container: ModelContainer
+    let repo: Repository
+    let food: CategoryEntity
+    let home: CategoryEntity
+    let power: CategoryEntity
+    let gas: CategoryEntity
+
+    init() throws {
+        container = try ModelContainer.makeAppContainer(inMemory: true)
+        repo = Repository(context: container.mainContext)
+        food = try repo.saveCategory(CategoryDraft(name: "Lebensmittel", icon: "cart", color: "#4CAF50", kind: .expense))
+        home = try repo.saveCategory(CategoryDraft(name: "Wohnen", icon: "house", color: "#795548", kind: .expense))
+        power = try repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#000000", kind: .expense, parentId: home.id))
+        gas = try repo.saveCategory(CategoryDraft(name: "Gas", icon: "flame", color: "#000000", kind: .expense, parentId: home.id))
+    }
+
+    func model(on category: CategoryEntity) throws -> (TransactionEditModel, TransactionEntity) {
+        let tx = try repo.addTransaction(amountCents: 6000, kind: .expense, categoryId: category.id,
+                                         day: CalendarDay(year: 2026, month: 11, day: 2)!, paidBy: anna, note: nil)
+        return (TransactionEditModel(transaction: tx, repository: repo, currentUserId: anna), tx)
+    }
+}
+
+@MainActor @Test func editingASubcategoryBookingPreselectsParentAndChip() throws {
+    let f = try SubEditFixture()
+    let (m, tx) = try f.model(on: f.power)
+    #expect(m.categories.map(\.name) == ["Lebensmittel", "Wohnen"])
+    #expect(m.mainId == f.home.id)
+    #expect(m.categoryId == f.power.id)
+    #expect(m.chipOptions.map(\.name) == ["Allgemein", "Strom", "Gas"])
+    #expect(m.canSave)
+    // Chips setzen nur den Wert; gespeichert wird mit „Sichern“.
+    m.categoryId = f.home.id
+    #expect(tx.categoryId == f.power.id)
+    try m.save()
+    #expect(tx.categoryId == f.home.id)
+}
+
+@MainActor @Test func pickingAnotherMainCategoryStartsAtAllgemein() throws {
+    let f = try SubEditFixture()
+    let (m, _) = try f.model(on: f.power)
+    m.selectMain(f.home.id)          // gleiche Hauptkategorie: Unterkategorie bleibt
+    #expect(m.categoryId == f.power.id)
+    m.selectMain(f.food.id)
+    #expect(m.categoryId == f.food.id)
+    #expect(m.chipOptions.isEmpty)
+    m.selectMain(f.home.id)
+    #expect(m.categoryId == f.home.id)
+}
+
+@MainActor @Test func anArchivedSubcategoryStaysVisibleAsChip() throws {
+    let f = try SubEditFixture()
+    let (_, tx) = try f.model(on: f.gas)
+    f.gas.archived = true
+    try f.container.mainContext.save()
+    let m = TransactionEditModel(transaction: tx, repository: f.repo, currentUserId: anna)
+    #expect(m.chipOptions.map(\.name) == ["Allgemein", "Strom", "Gas"])
+    #expect(m.canSave)
+    m.categoryId = f.home.id          // auch nach dem Wechsel auf „Allgemein“ zurückwählbar
+    #expect(m.chipOptions.map(\.name) == ["Allgemein", "Strom", "Gas"])
+    // Archivierte Unterkategorien anderer Buchungen erscheinen nicht.
+    let (other, _) = try f.model(on: f.power)
+    #expect(other.chipOptions.map(\.name) == ["Allgemein", "Strom"])
+}
+
+@MainActor @Test func aChipOfAnotherParentCannotBeSaved() throws {
+    let f = try SubEditFixture()
+    let (m, _) = try f.model(on: f.food)
+    m.categoryId = UUID()
+    #expect(!m.canSave)
 }

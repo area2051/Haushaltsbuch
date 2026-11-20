@@ -22,7 +22,8 @@ struct OverviewView: View {
     var body: some View {
         let current = CalendarDay.today().monthKey
         let categories = categoryEntities.map(\.value)
-        let catById = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let tree = CategoryTree(categories)
+        let catById = tree.byId
         let names = Dictionary(members.map { ($0.id, $0.displayName) }, uniquingKeysWith: { a, _ in a })
         let byId = Dictionary(entities.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let data = OverviewModel.make(
@@ -42,7 +43,7 @@ struct OverviewView: View {
                         charts(data)
                     }
                     if !data.warnings.isEmpty { warnings(data.warnings, catById) }
-                    recent(data.recent, byId: byId, catById: catById, names: names)
+                    recent(data.recent, byId: byId, tree: tree, names: names)
                 }
             }
             .padding(.horizontal, 16)
@@ -126,7 +127,7 @@ struct OverviewView: View {
         }
     }
 
-    private func recent(_ txs: [TxValue], byId: [UUID: TransactionEntity], catById: [UUID: CategoryValue],
+    private func recent(_ txs: [TxValue], byId: [UUID: TransactionEntity], tree: CategoryTree,
                         names: [UUID: String]) -> some View {
         card {
             VStack(alignment: .leading, spacing: 10) {
@@ -134,7 +135,7 @@ struct OverviewView: View {
                 ForEach(txs, id: \.id) { tx in
                     if let entity = byId[tx.id] {
                         Button { editing = entity } label: {
-                            TransactionRow(tx: tx, category: catById[tx.categoryId], payerName: names[tx.paidBy],
+                            TransactionRow(tx: tx, tree: tree, payerName: names[tx.paidBy],
                                            rejectionReason: entity.rejectionReason)
                         }
                         .buttonStyle(.plain)

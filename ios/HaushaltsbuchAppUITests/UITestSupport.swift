@@ -27,3 +27,11 @@ func amountText(digits: String) -> String {
     f.maximumFractionDigits = 2
     return f.string(from: NSNumber(value: Double(cents) / 100)) ?? ""
 }
+
+/// Nach dem Tipp auf eine Kategorie der Schnellerfassung: Hat sie Unterkategorien, erscheinen Chips statt
+/// zu speichern – dann „Allgemein“ (= die Hauptkategorie) antippen.
+@MainActor
+func tapGeneralChipIfShown(_ app: XCUIApplication, timeout: TimeInterval = 1) {
+    let chip = app.buttons["subcategory.Allgemein"]
+    if chip.waitForExistence(timeout: timeout) { chip.tap() }
+}

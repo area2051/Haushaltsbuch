@@ -1,14 +1,16 @@
 import SwiftUI
 import HaushaltsbuchCore
 
-/// Zeile der Buchungsliste.
+/// Zeile der Buchungsliste: Symbol der Kategorie in der Farbe ihrer Hauptkategorie, Label „Wohnen · Strom“.
 struct TransactionRow: View {
     let tx: TxValue
-    let category: CategoryValue?
+    let tree: CategoryTree
     let payerName: String?
     let rejectionReason: String?
 
-    private var categoryName: String { category?.name ?? "Unbekannt" }
+    private var category: CategoryValue? { tree.byId[tx.categoryId] }
+    private var colorHex: String? { tree.byId[tree.rootOf(tx.categoryId)]?.color }
+    private var categoryName: String { tree.label(tx.categoryId) }
     private var trimmedNote: String { tx.note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
 
     var body: some View {
@@ -17,7 +19,7 @@ struct TransactionRow: View {
                 .font(.body)
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
-                .background(Circle().fill(category.map { Color(hex: $0.color) } ?? .gray))
+                .background(Circle().fill(colorHex.map { Color(hex: $0) } ?? .gray))
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {

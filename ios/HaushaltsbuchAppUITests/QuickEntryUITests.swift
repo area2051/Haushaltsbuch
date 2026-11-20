@@ -40,6 +40,7 @@ final class QuickEntryUITests: XCTestCase {
         XCTAssertTrue(category.waitForExistence(timeout: 5), "Kategorie Lebensmittel fehlt")
         waitUntilHittable(category)
         category.tap()
+        tapGeneralChipIfShown(app)
         XCTAssertTrue(amount.waitForNonExistence(timeout: 5), "Sheet schließt nicht")
         // Dem 2-s-Debounce des Syncs Zeit geben, bevor die App beendet wird.
         Thread.sleep(forTimeInterval: 6)

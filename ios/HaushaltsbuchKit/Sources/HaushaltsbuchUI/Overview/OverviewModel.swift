@@ -6,6 +6,8 @@ struct ChartSlice: Equatable, Identifiable {
     var name: String
     var colorHex: String
     var cents: Int
+    /// Aufteilung einer Hauptkategorie („Allgemein“ + je Unterkategorie); leer ohne Ausgaben auf Unterkategorien.
+    var children: [ChartSlice] = []
 }
 
 struct ChartBar: Equatable, Identifiable {
@@ -34,12 +36,15 @@ enum OverviewModel {
     static func make(txs: [TxValue], categories: [CategoryValue], members: [UUID: String],
                      budgets: [BudgetValue], month: MonthKey) -> OverviewData {
         let monthTxs = txs.filter { month.contains($0.day) }
-        let catById = Dictionary(categories.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let tree = CategoryTree(categories)
+        let catById = tree.byId
 
-        let totals = Analytics.expensesByCategory(txs, month: month)
+        let totals = Analytics.expensesByCategory(txs, month: month, rootOf: tree.rootOf)
         var slices = totals.prefix(maxSlices).map { t in
-            ChartSlice(id: t.categoryId.uuidString, name: catById[t.categoryId]?.name ?? "Unbekannt",
-                       colorHex: catById[t.categoryId]?.color ?? othersColor, cents: t.cents)
+            let color = catById[t.categoryId]?.color ?? othersColor
+            return ChartSlice(id: t.categoryId.uuidString, name: catById[t.categoryId]?.name ?? "Unbekannt",
+                              colorHex: color, cents: t.cents,
+                              children: breakdown(txs, month: month, parentId: t.categoryId, color: color, tree: tree))
         }
         let rest = totals.dropFirst(maxSlices).reduce(0) { $0 + $1.cents }
         if rest > 0 { slices.append(ChartSlice(id: "others", name: "Weitere", colorHex: othersColor, cents: rest)) }
@@ -50,7 +55,7 @@ enum OverviewModel {
 
         // Nur Budgets aktiver Kategorien: archivierte/gelöschte (fehlen in `categories`) nicht warnen.
         let liveBudgets = budgets.filter { catById[$0.categoryId].map { !$0.archived } ?? false }
-        let warnings = Analytics.budgetProgress(liveBudgets, txs: txs, month: month)
+        let warnings = Analytics.budgetProgress(liveBudgets, txs: txs, month: month, rootOf: tree.rootOf)
             .filter { $0.level != .ok }
             .sorted { $0.ratio > $1.ratio }
 
@@ -60,6 +65,17 @@ enum OverviewModel {
 
         return OverviewData(summary: Analytics.summary(txs, month: month), byCategory: slices, byPerson: bars,
                             warnings: warnings, recent: Array(recent), hasTransactions: !monthTxs.isEmpty)
+    }
+
+    /// Teile einer Hauptkategorie in deren Farbe; leer, wenn nur direkt auf ihr gebucht wurde.
+    private static func breakdown(_ txs: [TxValue], month: MonthKey, parentId: UUID, color: String,
+                                  tree: CategoryTree) -> [ChartSlice] {
+        let parts = Analytics.subcategoryBreakdown(txs, month: month, parentId: parentId, tree: tree).filter { $0.cents > 0 }
+        guard parts.contains(where: { $0.categoryId != parentId }) else { return [] }
+        return parts.map { p in
+            let name = p.categoryId == parentId ? "Allgemein" : (tree.byId[p.categoryId]?.name ?? "Unbekannt")
+            return ChartSlice(id: p.categoryId.uuidString, name: name, colorHex: color, cents: p.cents)
+        }
     }
 
     /// „85 % von 300,00 €“
@@ -83,12 +99,14 @@ struct BudgetRowData: Equatable, Identifiable {
 }
 
 enum BudgetsModel {
+    /// Nur Hauptkategorien; deren Ausgaben zählen die Unterkategorien mit.
     /// `budgets` höchstens eins je Kategorie (`BudgetEntity.onePerCategory`); `rejections` je Kategorie-ID.
     static func rows(categories: [CategoryValue], budgets: [BudgetValue], txs: [TxValue],
                      month: MonthKey, rejections: [UUID: String] = [:]) -> [BudgetRowData] {
-        let progress = Dictionary(Analytics.budgetProgress(budgets, txs: txs, month: month).map { ($0.categoryId, $0) },
-                                  uniquingKeysWith: { a, _ in a })
-        return categories.filter { $0.kind == .expense && !$0.archived }
+        let rootOf = CategoryTree(categories).rootOf
+        let progress = Dictionary(Analytics.budgetProgress(budgets, txs: txs, month: month, rootOf: rootOf)
+            .map { ($0.categoryId, $0) }, uniquingKeysWith: { a, _ in a })
+        return categories.filter { $0.kind == .expense && !$0.archived && $0.parentId == nil }
             .sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
             .map { BudgetRowData(category: $0, progress: progress[$0.id], rejectionReason: rejections[$0.id]) }
     }

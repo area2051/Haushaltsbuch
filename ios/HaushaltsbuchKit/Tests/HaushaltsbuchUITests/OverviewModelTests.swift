@@ -89,3 +89,56 @@ private let members = [anna: "Anna", bert: "Bert"]
     let data = OverviewModel.make(txs: txs, categories: [live, archived], members: members, budgets: budgets, month: nov)
     #expect(data.warnings.map(\.categoryId) == [live.id])
 }
+
+// MARK: Unterkategorien
+
+private func sub(_ name: String, of parent: CategoryValue, color: String = "#999999", archived: Bool = false) -> CategoryValue {
+    CategoryValue(id: UUID(), name: name, icon: "bolt", color: color, kind: parent.kind, sortOrder: 0,
+                  archived: archived, parentId: parent.id)
+}
+
+@Test func sliceHasSubcategoryBreakdown() {
+    let home = CategoryValue(id: UUID(), name: "Wohnen", icon: "house", color: "#112233", kind: .expense, sortOrder: 0, archived: false)
+    let power = sub("Strom", of: home), gas = sub("Gas", of: home), food = cat("Essen")
+    let txs = [tx(300, 2, home), tx(500, 2, power), tx(700, 2, food)]
+    let data = OverviewModel.make(txs: txs, categories: [home, power, gas, food], members: members, budgets: [], month: nov)
+    #expect(data.byCategory.map(\.id) == [home.id.uuidString, food.id.uuidString])
+    #expect(data.byCategory.map(\.cents) == [800, 700])
+    #expect(data.byCategory[1].children.isEmpty)
+    // „Allgemein“ = direkt auf der Hauptkategorie gebucht; Farbe der Hauptkategorie; nur Beträge > 0.
+    #expect(data.byCategory[0].children == [
+        ChartSlice(id: power.id.uuidString, name: "Strom", colorHex: "#112233", cents: 500),
+        ChartSlice(id: home.id.uuidString, name: "Allgemein", colorHex: "#112233", cents: 300),
+    ])
+}
+
+@Test func sliceWithoutSubcategorySpendingHasNoChildren() {
+    let home = cat("Wohnen"), power = sub("Strom", of: home)
+    let data = OverviewModel.make(txs: [tx(300, 2, home)], categories: [home, power], members: members, budgets: [], month: nov)
+    #expect(data.byCategory.first?.children == [])
+}
+
+@Test func weitereSliceHasNoChildren() {
+    let cats = (0..<7).map { cat("K\($0)", sort: $0) }
+    let kids = cats.map { sub("S", of: $0) }
+    let txs = kids.enumerated().map { tx(800 - $0.offset * 100, 2, $0.element) }
+    let data = OverviewModel.make(txs: txs, categories: cats + kids, members: members, budgets: [], month: nov)
+    #expect(data.byCategory.last?.id == "others")
+    #expect(data.byCategory.last?.children == [])
+    #expect(data.byCategory.first?.children.count == 1)
+}
+
+@Test func overviewWarningsCountSubcategorySpending() {
+    let home = cat("Wohnen"), power = sub("Strom", of: home)
+    let data = OverviewModel.make(txs: [tx(900, 2, power)], categories: [home, power], members: members,
+                                  budgets: [BudgetValue(categoryId: home.id, monthlyLimitCents: 1000)], month: nov)
+    #expect(data.warnings.map(\.spentCents) == [900])
+}
+
+@Test func budgetRowsOnlyMainCategoriesAndSpendingIncludesChildren() {
+    let home = cat("Wohnen"), power = sub("Strom", of: home)
+    let rows = BudgetsModel.rows(categories: [home, power], budgets: [BudgetValue(categoryId: home.id, monthlyLimitCents: 1000)],
+                                 txs: [tx(400, 2, power), tx(100, 3, home)], month: nov)
+    #expect(rows.map(\.category.name) == ["Wohnen"])
+    #expect(rows[0].progress?.spentCents == 500)
+}
