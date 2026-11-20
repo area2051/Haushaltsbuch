@@ -80,7 +80,7 @@ private struct QuickEntryContent: View {
 
                 if !model.chipOptions.isEmpty {
                     // Ein Chip-Tipp speichert sofort („Allgemein“ = die Hauptkategorie selbst).
-                    SubcategoryChipsView(options: model.chipOptions, selectedId: model.chipParentId,
+                    SubcategoryChipsView(options: model.chipOptions, selectedId: nil,
                                          caption: "Unterkategorie antippen zum Speichern") { id in
                         attempt { try model.save(category: id); return true }
                     }

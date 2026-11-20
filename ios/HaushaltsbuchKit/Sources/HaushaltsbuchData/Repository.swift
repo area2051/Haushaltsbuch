@@ -139,12 +139,14 @@ public final class Repository {
             existing.icon = draft.icon
             existing.color = draft.color
             existing.kind = draft.kind.rawValue
+            if existing.parentId != draft.parentId {
+                // Umgehängt: ans Ende der neuen Geschwister (wie im Web).
+                existing.sortOrder = try nextSortOrder(parentId: draft.parentId, kind: draft.kind, excluding: id)
+            }
             existing.parentId = draft.parentId
             entity = existing
         } else {
-            let sameKind = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { !$0.softDeleted }))
-                .filter { $0.kind == draft.kind.rawValue }
-            let next = (sameKind.map(\.sortOrder).max() ?? -1) + 1
+            let next = try nextSortOrder(parentId: draft.parentId, kind: draft.kind, excluding: nil)
             entity = CategoryEntity(name: draft.name, icon: draft.icon, color: draft.color,
                                     kind: draft.kind, sortOrder: next, parentId: draft.parentId)
             context.insert(entity)
@@ -152,6 +154,14 @@ public final class Repository {
         entity.markDirty()
         try commit()
         return entity
+    }
+
+    /// Nächste Position unter den Geschwistern: Unterkategorien derselben Hauptkategorie bzw.
+    /// Hauptkategorien derselben Art.
+    private func nextSortOrder(parentId: UUID?, kind: Kind, excluding id: UUID?) throws -> Int {
+        let siblings = try fetch(FetchDescriptor<CategoryEntity>(predicate: #Predicate { !$0.softDeleted }))
+            .filter { $0.id != id && $0.parentId == parentId && (parentId != nil || $0.kind == kind.rawValue) }
+        return (siblings.map(\.sortOrder).max() ?? -1) + 1
     }
 
     /// Mit nicht gelöschten Buchungen/Regeln: archivieren, sonst Soft-Delete (inkl. Budget der Kategorie).

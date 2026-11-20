@@ -181,7 +181,7 @@ struct CategoryEditView: View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try app.repository.saveCategory(CategoryDraft(id: existing?.id, name: trimmed, icon: icon,
-                                                          color: color, kind: existing?.kindValue ?? kind,
+                                                          color: shownColor, kind: existing?.kindValue ?? kind,
                                                           parentId: parentId))
             dismiss()
         } catch {
