@@ -118,13 +118,13 @@ function CategoryForm({ target, defaultKind, all, onDone }: { target: Category |
     if (problem) return
     onDone()
     if (existing) await save('categories', { ...strip(existing), name: name.trim(), icon, color }, 'Kategorie gespeichert')
-    else await save('categories', newCategory({ name, icon, color, kind }, all, uuidv4()), 'Kategorie angelegt')
+    else await save('categories', newCategory({ name, icon, color, kind, parentId: null }, all, uuidv4()), 'Kategorie angelegt')
   }
 
-  const plan = existing ? removalPlan(existing, [...data.transactions.values()], [...data.recurringRules.values()]) : null
+  const plan = existing ? removalPlan(existing, [...data.transactions.values()], [...data.recurringRules.values()], all) : null
 
   async function remove() {
-    if (!plan) return
+    if (!plan || plan.action === 'blocked') return
     onDone()
     for (const r of plan.records) if (!(await save(r.table, r.record as never))) return
     toast.success(plan.action === 'archive' ? 'Kategorie archiviert – sie bleibt in alten Buchungen sichtbar.' : 'Kategorie gelöscht')
@@ -190,7 +190,7 @@ function CategoryForm({ target, defaultKind, all, onDone }: { target: Category |
       <Button type="submit" variant="primary" size="lg" className="w-full" disabled={!!problem || !data.online}>
         Speichern
       </Button>
-      {existing && (
+      {existing && plan?.action !== 'blocked' && (
         <ConfirmButton
           label={plan?.action === 'archive' ? 'Archivieren' : 'Löschen'}
           question={

@@ -62,3 +62,22 @@ test('budgets lists every active budget, fullest first', () => {
     ['food', 0.1],
   ])
 })
+
+test('slices carry children: Allgemein for the main category itself, parent color, only > 0', () => {
+  const cats = [cat('home', 'expense', { name: 'Wohnen', color: '#112233', icon: 'house' }), cat('power', 'expense', { name: 'Strom', parentId: 'home', color: '#999999' }), cat('gas', 'expense', { name: 'Gas', parentId: 'home' }), cat('food', 'expense', { name: 'Essen' })]
+  const txs = [tx(300, '2026-11-02', { categoryId: 'home' }), tx(500, '2026-11-02', { categoryId: 'power' }), tx(700, '2026-11-02', { categoryId: 'food' })]
+  const m = overviewModel({ txs, categories: cats, members: [], budgets: [], month: M })
+  expect(m.slices.map((s) => [s.id, s.cents])).toEqual([['home', 800], ['food', 700]])
+  expect(m.slices[1]!.children).toEqual([])
+  expect(m.slices[0]!.children).toEqual([
+    { id: 'power', name: 'Strom', color: '#112233', icon: 'cart', cents: 500, children: [] },
+    { id: 'home', name: 'Allgemein', color: '#112233', icon: 'house', cents: 300, children: [] },
+  ])
+})
+
+test('Weitere slice has no children', () => {
+  const cats = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => cat(id))
+  const txs = cats.map((c, i) => tx(800 - i * 100, '2026-11-02', { categoryId: c.id }))
+  const m = overviewModel({ txs, categories: cats, members: [], budgets: [], month: M })
+  expect(m.slices.at(-1)).toMatchObject({ id: 'others', children: [] })
+})
