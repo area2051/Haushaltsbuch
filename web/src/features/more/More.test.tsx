@@ -25,4 +25,14 @@ describe('More: Version', () => {
     })
     expect(await screen.findByText('Version unbekannt')).toBeInTheDocument()
   })
+
+  it('shows unknown version when /health answers without a version field', async () => {
+    await renderSignedIn(<More />, {
+      seed: (_, s) => {
+        // Older server during an update: undefined is dropped by JSON serialisation.
+        s.version = undefined as unknown as string
+      },
+    })
+    expect(await screen.findByText('Version unbekannt')).toBeInTheDocument()
+  })
 })

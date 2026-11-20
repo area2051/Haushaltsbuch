@@ -23,6 +23,7 @@ export function More() {
     let cancelled = false
     api
       .health()
+      // `|| null` also covers older servers whose /health has no version field
       .then((h) => !cancelled && setVersion(h.version || null))
       .catch(() => !cancelled && setVersion(null))
     return () => {
