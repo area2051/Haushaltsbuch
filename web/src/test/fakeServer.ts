@@ -16,6 +16,7 @@ export class FakeServer {
   /** When true every request fails at the network level. */
   offline = false
   setupRequired = false
+  version = '1.2.3'
   /** Handles POST /sync when set (see FakeSyncServer). */
   syncHandler: ((body: never) => Promise<unknown>) | null = null
   /** Artificial delay for refresh calls, to test concurrent 401s. */
@@ -49,7 +50,7 @@ export class FakeServer {
       return this.validAccess.has(token)
     }
 
-    if (path === '/health') return json(200, { status: 'ok', setupRequired: this.setupRequired })
+    if (path === '/health') return json(200, { status: 'ok', setupRequired: this.setupRequired, version: this.version })
     if (path === '/auth/login') {
       if (body.username !== this.user.username || body.password !== this.password) return error(401, 'invalid_credentials')
       return json(200, { ...this.issue(), user: this.user })

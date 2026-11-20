@@ -1,14 +1,16 @@
 #!/bin/sh
-# Bringt die Installation auf den neuesten Stand von origin/main:
-# Backup -> git pull -> API neu bauen -> /health prüfen.
+# Spielt das neueste Release (höchster Tag vX.Y.Z) ein:
+# Backup -> Tag auschecken -> API neu bauen -> /health prüfen.
 # Schlägt Build oder Health-Check fehl, läuft wieder das vorherige Image und
-# der Git-Stand wird auf den alten Commit zurückgesetzt.
+# der Git-Stand steht wieder auf dem alten Commit.
+# Der Clone bleibt nach einem Update im detached HEAD auf dem Tag (gewollt).
+# Es wird nie auf einen Stand gewechselt, der kein Nachfahre von HEAD ist (auch nicht
+# mit --force): Migrationen des laufenden Codes können neuer sein.
 #
 # Aufruf im Repo-Ordner auf dem NAS:  sh ops/update.sh [--force]
-#   --force   auch neu bauen, wenn es keinen neuen Commit gibt
+#   --force   auch neu bauen, wenn es kein neueres Release gibt
 # Umgebungsvariablen (optional):
 #   COMPOSE_PROJECT_NAME  Compose-Projektname (sonst vom laufenden Stack gelesen)
-#   HB_UPDATE_BRANCH      Branch statt main
 #   HB_HEALTH_TIMEOUT     Sekunden für den Health-Check (Standard 90)
 set -eu
 
@@ -26,7 +28,6 @@ esac
 
 cd "$(dirname "$0")/.."
 
-BRANCH=${HB_UPDATE_BRANCH:-main}
 HEALTH_TIMEOUT=${HB_HEALTH_TIMEOUT:-90}
 if [ -z "${API_PORT:-}" ] && [ -f .env ]; then
   API_PORT=$(sed -n 's/^API_PORT=//p' .env | tail -n 1 | tr -d '\r"')
@@ -35,8 +36,6 @@ HEALTH_URL="http://127.0.0.1:${API_PORT:-3000}/health"
 
 # --- Vorprüfungen --------------------------------------------------------------------
 
-branch=$(git rev-parse --abbrev-ref HEAD)
-[ "$branch" = "$BRANCH" ] || die "Der Clone steht auf '$branch', nicht auf '$BRANCH'. Erst: git switch $BRANCH"
 git diff --quiet HEAD -- || die "Es gibt lokale Änderungen an versionierten Dateien (git status). Erst aufräumen."
 
 # Projektname des laufenden Stacks. Ein geratener Name würde einen zweiten Stack starten,
@@ -74,17 +73,29 @@ wait_healthy() {
 
 # --- Neuer Stand? --------------------------------------------------------------------
 
-log "Hole origin/$BRANCH"
-git fetch --quiet origin "$BRANCH"
+log "Hole Releases"
+git fetch --quiet --tags --force --prune --prune-tags origin
+tag=$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+[ -n "$tag" ] || die "Kein Release (Tag vX.Y.Z) gefunden. Erst ein Release anlegen: GitHub → Actions → Release → Run workflow."
 old=$(git rev-parse HEAD)
-new=$(git rev-parse "origin/$BRANCH")
+new=$(git rev-parse "$tag^{commit}")
+oldv=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD 2> /dev/null | head -n 1 || true)
+[ -n "$oldv" ] || oldv=$(git rev-parse --short HEAD)
+
+# Nie zurück oder zur Seite, auch nicht mit --force.
+git merge-base --is-ancestor HEAD "$tag" \
+  || die "Release $tag ist nicht neuer als der installierte Stand ($oldv). Kein Update."
 
 if [ "$old" = "$new" ] && [ "$force" -eq 0 ]; then
-  log "Bereits aktuell ($old)."
+  log "Bereits aktuell ($tag)."
   exit 0
 fi
-git merge-base --is-ancestor HEAD "origin/$BRANCH" \
-  || die "Lokaler Stand ist nicht Vorgänger von origin/$BRANCH (lokale Commits?). Kein Update."
+
+# Link zum Release, nur für GitHub-Remotes.
+release_url=""
+repo=$(git remote get-url origin 2> /dev/null | sed -n -e 's#^https://github\.com/\([^/]*/[^/]*\)$#\1#p' -e 's#^git@github\.com:\([^/]*/[^/]*\)$#\1#p' || true)
+repo=${repo%.git}
+[ -z "$repo" ] || release_url="https://github.com/$repo/releases/tag/$tag"
 
 # --- Update --------------------------------------------------------------------------
 
@@ -106,13 +117,13 @@ fi
 
 rollback() {
   echo "FEHLER: $1" >&2
-  git reset --keep "$old"
+  git checkout --quiet --detach "$old"
   if [ -n "$prev" ]; then
     log "Starte das vorherige Image wieder"
     docker tag "$image:previous" "$image"
     compose up -d --no-build api
     if wait_healthy; then
-      echo "Der vorherige Stand ($old) läuft wieder." >&2
+      echo "Der vorherige Stand ($oldv) läuft wieder." >&2
     else
       echo "Auch der vorherige Stand antwortet nicht auf $HEALTH_URL – bitte 'docker compose logs api' prüfen." >&2
     fi
@@ -121,8 +132,9 @@ rollback() {
   exit 1
 }
 
-log "Aktualisiere $old -> $new"
-git merge --ff-only --quiet "origin/$BRANCH"
+log "Aktualisiere $oldv -> $tag"
+git checkout --quiet --detach "$tag" \
+  || die "Checkout von $tag fehlgeschlagen (unversionierte Dateien im Weg? git status). Es wurde nichts geändert."
 
 log "Baue und starte die API neu"
 compose up -d --build api || rollback "Build/Start der neuen API fehlgeschlagen."
@@ -130,5 +142,6 @@ compose up -d --build api || rollback "Build/Start der neuen API fehlgeschlagen.
 log "Warte auf $HEALTH_URL"
 wait_healthy || rollback "Neue API antwortet nach ${HEALTH_TIMEOUT}s nicht auf $HEALTH_URL."
 
-log "Fertig: $old -> $new"
+log "Fertig: $oldv -> $tag"
+[ -z "$release_url" ] || echo "Release: $release_url"
 git log --oneline "$old..$new"

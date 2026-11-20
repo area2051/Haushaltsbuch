@@ -2,6 +2,7 @@ import { count, eq, isNull } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { hashPassword, verifyPassword } from '../src/auth/passwords.js'
 import { categories, users } from '../src/db/schema.js'
+import { APP_VERSION } from '../src/version.js'
 import { DEFAULT_CATEGORIES } from '../src/setup/defaultCategories.js'
 import { createTestApp, setupAdmin } from './helpers.js'
 
@@ -35,13 +36,13 @@ describe('health and setup', () => {
   test('health reports setupRequired=true on empty db', async () => {
     const res = await t.app.inject({ method: 'GET', url: '/health' })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ status: 'ok', setupRequired: true })
+    expect(res.json()).toEqual({ status: 'ok', setupRequired: true, version: APP_VERSION })
   })
 
   test('health reports setupRequired=false after setup', async () => {
     await setupAdmin(t.app)
     const res = await t.app.inject({ method: 'GET', url: '/health' })
-    expect(res.json()).toEqual({ status: 'ok', setupRequired: false })
+    expect(res.json()).toEqual({ status: 'ok', setupRequired: false, version: APP_VERSION })
   })
 
   test('setup creates admin and ten default categories', async () => {

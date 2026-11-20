@@ -240,11 +240,15 @@
               "ok"
             ],
             "type": "string"
+          },
+          "version": {
+            "type": "string"
           }
         },
         "required": [
           "status",
-          "setupRequired"
+          "setupRequired",
+          "version"
         ],
         "type": "object"
       },
