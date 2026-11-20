@@ -30,7 +30,7 @@ case "$*" in
   "diff --quiet HEAD"*) exit "$STUB_DIRTY" ;;
   "fetch"*) exit 0 ;;
   "merge-base --is-ancestor"*) exit "$STUB_DIVERGED" ;;
-  "checkout --quiet --detach v"*) echo "$STUB_TAG_COMMIT" > "$T/state/head" ;;
+  "checkout --quiet --detach v"*) [ "$STUB_CHECKOUT_FAIL" = 1 ] && exit 1; echo "$STUB_TAG_COMMIT" > "$T/state/head" ;;
   "checkout --quiet --detach "*) echo "$4" > "$T/state/head" ;;
   "log"*) echo "abc123 neue Funktion" ;;
   *) echo "unerwarteter git-Aufruf: $*" >&2; exit 99 ;;
@@ -72,7 +72,7 @@ EOF
 defaults() {
   STUB_HEAD=aaa111 STUB_TAG_COMMIT=bbb222 STUB_TAGS="v1.1.0\nv1.0.0" STUB_DESCRIBE=""
   STUB_REMOTE_URL=https://github.com/area2051/Haushaltsbuch.git STUB_DIRTY=0 STUB_DIVERGED=0
-  STUB_BACKUP_FAIL=0 STUB_BUILD_FAIL=0 STUB_HEALTH=ok STUB_NO_API=0
+  STUB_BACKUP_FAIL=0 STUB_CHECKOUT_FAIL=0 STUB_BUILD_FAIL=0 STUB_HEALTH=ok STUB_NO_API=0
   STUB_PROJECTS="haushaltsbuch
 "
 }
@@ -82,7 +82,7 @@ run_update() {
   out=$(cd "$T" && env PATH="$T/bin:$PATH" T="$T" STUB_HEAD="$STUB_HEAD" \
     STUB_TAG_COMMIT="$STUB_TAG_COMMIT" STUB_TAGS="$STUB_TAGS" STUB_DESCRIBE="$STUB_DESCRIBE" \
     STUB_REMOTE_URL="$STUB_REMOTE_URL" STUB_DIRTY="$STUB_DIRTY" STUB_DIVERGED="$STUB_DIVERGED" \
-    STUB_BACKUP_FAIL="$STUB_BACKUP_FAIL" STUB_BUILD_FAIL="$STUB_BUILD_FAIL" STUB_HEALTH="$STUB_HEALTH" \
+    STUB_BACKUP_FAIL="$STUB_BACKUP_FAIL" STUB_CHECKOUT_FAIL="$STUB_CHECKOUT_FAIL" STUB_BUILD_FAIL="$STUB_BUILD_FAIL" STUB_HEALTH="$STUB_HEALTH" \
     STUB_PROJECTS="$STUB_PROJECTS" STUB_NO_API="$STUB_NO_API" HB_HEALTH_TIMEOUT=6 COMPOSE_PROJECT_NAME="${FORCE_PROJECT:-}" \
     sh "$T/repo/ops/update.sh" "$@" 2>&1)
   code=$?
@@ -139,8 +139,16 @@ no_tags_aborts() {
   STUB_TAGS=""
   run_update
   assert_exit 1
-  assert_output "Release"
+  assert_output "Release anlegen"
   assert_not_called "exec -T backup"
+  assert_not_called "up -d"
+}
+
+checkout_failure_aborts_cleanly() {
+  STUB_CHECKOUT_FAIL=1
+  run_update
+  assert_exit 1
+  assert_output "Checkout von v1.1.0 fehlgeschlagen"
   assert_not_called "up -d"
 }
 
@@ -241,7 +249,7 @@ success_runs_steps_in_order() {
   assert_output "abc123 neue Funktion"
 }
 
-backup_failure_stops_before_pull() {
+backup_failure_stops_before_checkout() {
   STUB_BACKUP_FAIL=1
   run_update
   assert_exit 1
@@ -293,11 +301,11 @@ build_failure_without_previous_image_still_resets_git() {
 }
 
 for c in no_running_api_updates_without_rollback_tag build_failure_without_previous_image_still_resets_git already_current_does_nothing force_rebuilds_even_when_current \
-  no_tags_aborts picks_highest_tag older_release_aborts_even_with_force release_url_from_ssh_remote \
+  no_tags_aborts checkout_failure_aborts_cleanly picks_highest_tag older_release_aborts_even_with_force release_url_from_ssh_remote \
   no_release_url_for_other_remote old_version_shown_from_tag \
   local_changes_abort diverged_history_aborts_before_backup unknown_project_aborts \
   ambiguous_project_aborts project_name_from_env_skips_detection success_runs_steps_in_order \
-  backup_failure_stops_before_pull build_failure_rolls_back health_failure_rolls_back \
+  backup_failure_stops_before_checkout build_failure_rolls_back health_failure_rolls_back \
   unknown_argument_is_rejected; do
   run_case "$c"
 done
