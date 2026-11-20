@@ -698,22 +698,3 @@ private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
     let sent = try #require(f.transport.requests.first?.changes.categories?.first { $0.id == lower(child.id) })
     #expect(sent.parentId == lower(parent.id))
 }
-
-@MainActor @Test func clearedParentIdIsSentAsNull() async throws {
-    let f = try SyncFixture()
-    let parent = try f.makeCategory()
-    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#000000",
-                                                      kind: .expense, parentId: parent.id))
-    await f.engine.syncNow()
-    try f.repo.saveCategory(CategoryDraft(id: child.id, name: "Strom", icon: "bolt", color: "#000000",
-                                          kind: .expense, parentId: nil))
-    await f.engine.syncNow()
-    let req = try #require(f.transport.requests.last)
-    let sent = try #require(req.changes.categories?.first { $0.id == lower(child.id) })
-    let object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(sent)) as? [String: Any])
-    // Bekannte Lücke: der generierte Encoder lässt nil-Optionals weg (encodeIfPresent); der Server wertet
-    // ein fehlendes `parentId` als "behalten". Entfernen, sobald das Löschen des Elternteils synchronisiert wird.
-    withKnownIssue("generierter Encoder lässt parentId: nil weg") {
-        #expect(object["parentId"] is NSNull)
-    }
-}

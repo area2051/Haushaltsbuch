@@ -201,7 +201,7 @@ public final class AuthService {
                 await self?.refresherDidChange(session, id: id)
             })
         self.refresher = refresher
-        client = clientFactory(session.serverURL, [AuthMiddleware(refresher: refresher)])
+        client = clientFactory(session.serverURL, [AuthMiddleware(refresher: refresher), SyncParentIdMiddleware()])
     }
 
     private func refresherDidChange(_ session: StoredSession?, id: UUID) {
