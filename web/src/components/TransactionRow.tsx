@@ -7,12 +7,15 @@ import { CategoryIcon } from './CategoryIcon'
 export function TransactionRow({
   tx,
   category,
+  label,
   payerName,
   showPayer,
   onClick,
 }: {
   tx: Transaction
   category?: Category
+  /** Shown instead of the category name, e.g. „Wohnen · Strom“. */
+  label?: string
   payerName?: string
   showPayer?: boolean
   onClick?(): void
@@ -27,7 +30,7 @@ export function TransactionRow({
       <CategoryIcon icon={category?.icon ?? ''} color={category?.color ?? '#8A8276'} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 truncate text-[15px] font-medium">
-          {category?.name ?? 'Ohne Kategorie'}
+          {label ?? category?.name ?? 'Ohne Kategorie'}
           {tx.recurringRuleId && <Repeat aria-label="wiederkehrend" className="size-3.5 shrink-0 text-ink-3" />}
         </span>
         {subtitle && <span className="block truncate text-[13px] text-ink-3">{subtitle}</span>}

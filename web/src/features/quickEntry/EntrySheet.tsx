@@ -1,9 +1,10 @@
 import { ChevronDown, Delete, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { useData, useMe } from '../../app/AppContext'
+import { useCategoryTree, useData, useMe } from '../../app/AppContext'
 import { useSaver } from '../../app/useSaver'
 import { CategoryIcon } from '../../components/CategoryIcon'
+import { SubcategoryChips } from '../../components/SubcategoryChips'
 import { Button } from '../../components/ui/Button'
 import { Field, Input, Select } from '../../components/ui/Field'
 import { Segmented } from '../../components/ui/Segmented'
@@ -90,13 +91,16 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
   const [repeat, setRepeat] = useState<Rhythm | null>(null)
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }))
 
-  const transactions = useMemo(() => [...data.transactions.values()], [data.transactions])
+  const tree = useCategoryTree()
+  // Ranked per main category: bookings on a subcategory count for its parent.
+  const transactions = useMemo(() => [...data.transactions.values()].map((t) => ({ ...t, categoryId: tree.rootOf(t.categoryId) })), [data.transactions, tree])
+  /** Main categories only; subcategories are picked with the chips below. */
   const categories = useMemo(() => {
-    const ranked = rankCategories([...data.categories.values()], transactions, draft.kind, today())
-    // When editing, keep the (possibly archived) current category selectable.
-    const current = editing ? data.categories.get(editing.categoryId) : undefined
+    const ranked = rankCategories([...data.categories.values()].filter((c) => !c.parentId), transactions, draft.kind, today())
+    // When editing, keep the (possibly archived) current main category selectable.
+    const current = editing ? data.categories.get(tree.rootOf(editing.categoryId)) : undefined
     return current && current.kind === draft.kind && !ranked.includes(current) ? [current, ...ranked] : ranked
-  }, [data.categories, transactions, draft.kind, editing])
+  }, [data.categories, transactions, draft.kind, editing, tree])
   const members = useMemo(() => [...data.users.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)), [data.users])
 
   // Desktop: type the amount on the keyboard.
@@ -121,7 +125,7 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
     onDone()
     void saveRecord('transactions', record, {
       message,
-      description: `${formatMoney(record.amountCents)} · ${data.categories.get(record.categoryId)?.name ?? ''}`,
+      description: `${formatMoney(record.amountCents)} · ${tree.byId.has(record.categoryId) ? tree.labelFor(record.categoryId) : ''}`,
       undo: editing ? undefined : { ...record, deleted: true },
     })
   }
@@ -156,6 +160,17 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
   const offline = !data.online
   const repeatInvalid = repeat !== null && ruleProblem(ruleDraftFor(draft, repeat)) !== null
   const amountReady = draft.cents > 0 && !offline
+  /** Category taps only select (no immediate save). */
+  const selecting = !!editing || details
+  const mainId = draft.categoryId ? tree.rootOf(draft.categoryId) : ''
+  const hasSubcategories = (id: string) => tree.childrenOf(id).some(tree.isSelectable)
+
+  function pickMain(id: string) {
+    // Picking another main category starts at „Allgemein“ (the main category itself).
+    if (id === mainId) return
+    if (selecting || hasSubcategories(id)) set({ categoryId: id })
+    else save(id)
+  }
 
   return (
     <div className="space-y-5">
@@ -199,14 +214,14 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
         </p>
         <div className={cn('grid grid-cols-4 gap-2 transition-opacity sm:grid-cols-5', !amountReady && !editing && 'pointer-events-none opacity-40')}>
           {categories.map((c) => {
-            const selected = c.id === draft.categoryId
+            const selected = c.id === mainId
             return (
               <button
                 key={c.id}
                 type="button"
                 disabled={offline || (!amountReady && !editing)}
-                onClick={() => (editing || details ? set({ categoryId: c.id }) : save(c.id))}
-                aria-pressed={editing || details ? selected : undefined}
+                onClick={() => pickMain(c.id)}
+                aria-pressed={selecting || hasSubcategories(c.id) ? selected : undefined}
                 className={cn(
                   'flex flex-col items-center gap-1.5 rounded-2xl px-1 py-2.5 transition active:scale-95',
                   selected ? 'bg-tile shadow-tile ring-2 ring-ink' : 'hover:bg-tile',
@@ -218,6 +233,13 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
             )
           })}
         </div>
+        {mainId && hasSubcategories(mainId) && (
+          // A fieldset only to disable all chips at once; the chip row names itself.
+          <fieldset disabled={offline || (!amountReady && !editing)} className="mt-4 disabled:opacity-40">
+            <p className="mb-2 px-1 text-[13px] font-medium text-ink-3">{selecting ? 'Unterkategorie' : 'Unterkategorie antippen zum Speichern'}</p>
+            <SubcategoryChips parentId={mainId} value={draft.categoryId} tree={tree} onChange={(id) => (selecting ? set({ categoryId: id }) : save(id))} />
+          </fieldset>
+        )}
       </section>
 
       {!editing && (

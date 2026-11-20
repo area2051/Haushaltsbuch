@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { ApiClient, type UserDto } from '../api/client'
+import { type CategoryTree, categoryTree } from '../domain/categoryTree'
 import { safeStorage } from '../lib/storage'
 import { SyncStore, type SyncState } from '../sync/store'
 import { type Boot, bootstrap } from './bootstrap'
@@ -110,4 +111,10 @@ export function useMe(): UserDto {
 export function useData(): SyncState {
   const { store } = useApp()
   return useSyncExternalStore(store.subscribe, store.getState)
+}
+
+/** Category tree of the current data snapshot (rebuilt only when categories change). */
+export function useCategoryTree(): CategoryTree {
+  const { categories } = useData()
+  return useMemo(() => categoryTree([...categories.values()]), [categories])
 }
