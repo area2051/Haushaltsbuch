@@ -19,11 +19,16 @@ permissions:
 jobs:
   release:
     name: Release anlegen
-    # Nur von main aus: Der Release-Commit wird auf main gepusht.
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Nur von main aus: Der Release-Commit wird auf main gepusht.
+      - name: Nur von main aus starten
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Release nur von main aus starten"
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -61,7 +66,8 @@ jobs:
           git add server/package.json server/package-lock.json web/package.json web/package-lock.json
           git commit -m "chore(release): v$VERSION"
           git tag -a "v$VERSION" -m "v$VERSION"
-          git push origin HEAD:main "v$VERSION"
+          # --atomic: Wurde main inzwischen verändert, wird auch der Tag nicht gepusht.
+          git push --atomic origin HEAD:main "v$VERSION"
       - name: GitHub-Release erstellen
         env:
           VERSION: ${{ steps.bump.outputs.version }}

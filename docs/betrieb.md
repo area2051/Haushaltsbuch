@@ -60,11 +60,11 @@ Nach einem Update steht der Clone im „detached HEAD“ auf dem Release-Tag. Da
 
 Es bricht vorher ab, wenn es noch keinen Release-Tag gibt (dann zuerst ein Release anlegen, siehe unten), versionierte Dateien lokal geändert sind oder der Compose-Projektname des laufenden Stacks nicht eindeutig ist (dann `COMPOSE_PROJECT_NAME=<name> sh ops/update.sh`; den Namen zeigt `docker compose ls`). Es nutzt immer `docker-compose.yml` aus dem Repo, auch wenn UGOS daneben ein eigenes `docker-compose.yaml` angelegt hat.
 
-**Erster Umstieg auf Releases:** Der Clone steht noch auf `main`. Einmal `git pull` ausführen (damit `ops/update.sh` aktuell ist), dann das Release `v1.0.0` anlegen (siehe „Release anlegen“) und `sh ops/update.sh` starten. Das Skript meldet „Bereits aktuell“ oder spielt den Release-Stand ein.
+**Erster Umstieg auf Releases:** Der Clone steht noch auf `main`. Einmal `git pull` ausführen (damit `ops/update.sh` aktuell ist), dann das Release `v1.0.0` anlegen (siehe „Release anlegen“) und `sh ops/update.sh` starten. Das Skript meldet „Bereits aktuell“, spielt den Release-Stand ein oder bricht ab („… nicht neuer als der installierte Stand“), wenn `main` schon Commits nach dem neuesten Release hat; dann zuerst ein neues Release anlegen und das Skript noch einmal starten. Danach wird auf dem NAS kein `git pull` mehr benutzt (der Clone ist detached, `git pull` schlägt fehl), nur noch `sh ops/update.sh`.
 
 Die laufende Version steht in der Web-App unter Mehr → App („Version X.Y.Z“) und im Feld `version` von `/health`.
 
-Von Hand geht es weiterhin so (`vX.Y.Z` durch das gewünschte Release ersetzen):
+Von Hand geht es weiterhin so (`vX.Y.Z` durch das gewünschte Release ersetzen; vorher Backup mit `docker compose exec backup sh /backup.sh` und nur auf ein neueres Release wechseln):
 
 ```bash
 git fetch --tags && git checkout --detach vX.Y.Z
@@ -89,6 +89,8 @@ Ein Update auf dem NAS installiert nur Releases, keinen unfertigen Stand von `ma
    - `major`: großer Umbau (1.0.0 → 2.0.0)
 3. Der Workflow erhöht die Version in `server/` und `web/`, committet `chore(release): vX.Y.Z` auf `main`, setzt den Tag `vX.Y.Z` und legt das GitHub-Release mit automatisch erzeugten Notizen an.
 4. Auf dem NAS `sh ops/update.sh` ausführen.
+
+Schlägt der Workflow erst nach dem Push fehl (Commit und Tag existieren, aber kein GitHub-Release), das Release von Hand anlegen: GitHub → Releases → „Draft a new release“ → vorhandenen Tag wählen → „Generate release notes“. Den Workflow nicht noch einmal starten, er würde die Version erneut erhöhen.
 
 ## Backup
 
