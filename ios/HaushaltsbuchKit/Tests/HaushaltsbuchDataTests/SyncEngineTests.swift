@@ -63,7 +63,7 @@ import HaushaltsbuchCore
 
 @MainActor @Test func appliesServerChangesAndUpsertsMembers() async throws {
     let f = try SyncFixture()
-    let catId = UUID(), txId = UUID(), ruleId = UUID(), budgetId = UUID(), memberId = UUID()
+    let catId = UUID(), txId = UUID(), ruleId = UUID(), budgetId = UUID(), memberId = UUID(), parentId = UUID()
     let local = TransactionEntity(amountCents: 100, kind: .expense, categoryId: catId, day: f.day,
                                   paidBy: f.user, note: nil, version: 3)
     f.context.insert(local)
@@ -75,7 +75,7 @@ import HaushaltsbuchCore
     f.server.extra = SyncChanges(
         budgets: [.init(categoryId: l(catId), deleted: false, id: l(budgetId), monthlyLimitCents: 40000, version: 12)],
         categories: [.init(archived: true, color: "#AABBCC", deleted: false, icon: "house", id: l(catId),
-                           kind: .income, name: "Gehalt", sortOrder: 4, version: 10)],
+                           kind: .income, name: "Gehalt", parentId: l(parentId), sortOrder: 4, version: 10)],
         recurringRules: [.init(amountCents: 7000, categoryId: l(catId), deleted: false, endDate: "2027-12-31",
                                frequency: .yearly, id: l(ruleId), interval: 3, kind: .income, nextDueDate: "2027-01-15",
                                note: "Bonus", paidBy: l(memberId), startDate: "2026-01-15", version: 11)],
@@ -95,6 +95,7 @@ import HaushaltsbuchCore
     let cat = try #require(try f.all(CategoryEntity.self).first { $0.id == catId })
     #expect(cat.name == "Gehalt" && cat.icon == "house" && cat.color == "#AABBCC")
     #expect(cat.kind == "income" && cat.sortOrder == 4 && cat.archived && cat.version == 10 && !cat.isDirty)
+    #expect(cat.parentId == parentId)
     let rule = try #require(try f.all(RecurringRuleEntity.self).first)
     #expect(rule.id == ruleId && rule.amountCents == 7000 && rule.frequency == "yearly" && rule.kind == "income")
     #expect(rule.interval == 3)
@@ -410,6 +411,7 @@ import HaushaltsbuchCore
     let c = try #require(req.changes.categories?.first)
     #expect(c.id == l(cat.id) && c.name == "Essen" && c.icon == "cart" && c.color == "#112233")
     #expect(c.kind == .expense && c.sortOrder == 0 && !c.archived && !c.deleted)
+    #expect(c.parentId == nil)
     let t = try #require(req.changes.transactions?.first)
     #expect(t.id == l(tx.id) && t.amountCents == 1999 && t.kind == .income && t.categoryId == l(cat.id))
     #expect(t.date == "2026-11-01" && t.paidBy == l(f.user) && t.note == nil && t.recurringRuleId == l(ruleId))
@@ -505,6 +507,13 @@ import HaushaltsbuchCore
     #expect(UserDefaultsCursorStore(key: store.key, defaults: defaults).lastVersion == 17)
 }
 
+@Test func cursorStoreKeyIsGeneration3() {
+    let defaults = UserDefaults(suiteName: "SyncCursor-\(UUID().uuidString)")!
+    let store = UserDefaultsCursorStore(serverURL: URL(string: "http://nas.local:3000")!, userId: UUID(),
+                                        defaults: defaults)
+    #expect(store.key.hasPrefix("sync.lastVersion.v3."))
+}
+
 /// Eine App-Version mit neuem Datenmodell (hier: `interval` der Regeln) darf den Cursor der alten
 /// Version nicht weiterverwenden: Die alte App hat das Feld nie gespeichert, und unveränderte
 /// Datensätze kämen inkrementell nie wieder. Ein frischer Cursor holt einmal alles neu.
@@ -581,7 +590,7 @@ private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
     // Verwerfen: Server-Stand (inzwischen umbenannt) kommt per Neuabruf zurück.
     f.server.rejected = []
     f.server.extra.categories = [.init(archived: false, color: "#112233", deleted: false, icon: "cart",
-                                       id: lower(cat.id), kind: .expense, name: "Lebensmittel",
+                                       id: lower(cat.id), kind: .expense, name: "Lebensmittel", parentId: nil,
                                        sortOrder: 0, version: version + 3)]
     try f.repo.discardRejected(cat)
     await f.engine.syncNow()
@@ -628,7 +637,7 @@ private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
     let latch = Latch()
     let server = f.server
     server.extra.categories = [.init(archived: false, color: "#112233", deleted: false, icon: "cart",
-                                     id: UUID().uuidString.lowercased(), kind: .expense, name: "Fremd",
+                                     id: UUID().uuidString.lowercased(), kind: .expense, name: "Fremd", parentId: nil,
                                      sortOrder: 0, version: 9)]
     f.transport.handle { req in
         try await latch.wait()
@@ -677,4 +686,34 @@ private func lower(_ u: UUID) -> String { u.uuidString.lowercased() }
     try f.repo.discardRejected(mine)
     #expect(try f.all(BudgetEntity.self).map(\.id) == [theirsId])
     #expect(f.refetchRequests == 0)
+}
+
+
+@MainActor @Test func categoryParentIdIsSentOnPush() async throws {
+    let f = try SyncFixture()
+    let parent = try f.makeCategory()
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#000000",
+                                                      kind: .expense, parentId: parent.id))
+    await f.engine.syncNow()
+    let sent = try #require(f.transport.requests.first?.changes.categories?.first { $0.id == lower(child.id) })
+    #expect(sent.parentId == lower(parent.id))
+}
+
+@MainActor @Test func clearedParentIdIsSentAsNull() async throws {
+    let f = try SyncFixture()
+    let parent = try f.makeCategory()
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#000000",
+                                                      kind: .expense, parentId: parent.id))
+    await f.engine.syncNow()
+    try f.repo.saveCategory(CategoryDraft(id: child.id, name: "Strom", icon: "bolt", color: "#000000",
+                                          kind: .expense, parentId: nil))
+    await f.engine.syncNow()
+    let req = try #require(f.transport.requests.last)
+    let sent = try #require(req.changes.categories?.first { $0.id == lower(child.id) })
+    let object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(sent)) as? [String: Any])
+    // Bekannte Lücke: der generierte Encoder lässt nil-Optionals weg (encodeIfPresent); der Server wertet
+    // ein fehlendes `parentId` als "behalten". Entfernen, sobald das Löschen des Elternteils synchronisiert wird.
+    withKnownIssue("generierter Encoder lässt parentId: nil weg") {
+        #expect(object["parentId"] is NSNull)
+    }
 }

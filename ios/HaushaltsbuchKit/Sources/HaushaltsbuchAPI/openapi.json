@@ -93,6 +93,13 @@
             "minLength": 1,
             "type": "string"
           },
+          "parentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sortOrder": {
             "maximum": 2147483647,
             "minimum": -2147483647,
@@ -139,6 +146,13 @@
           "name": {
             "type": "string"
           },
+          "parentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sortOrder": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -159,7 +173,8 @@
           "color",
           "kind",
           "sortOrder",
-          "archived"
+          "archived",
+          "parentId"
         ],
         "type": "object"
       },

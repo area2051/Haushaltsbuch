@@ -24,10 +24,13 @@ public struct CategoryValue: Sendable, Equatable {
     public var kind: Kind
     public var sortOrder: Int
     public var archived: Bool
+    public var parentId: UUID?
 
-    public init(id: UUID, name: String, icon: String, color: String, kind: Kind, sortOrder: Int, archived: Bool) {
+    public init(id: UUID, name: String, icon: String, color: String, kind: Kind, sortOrder: Int, archived: Bool,
+                parentId: UUID? = nil) {
         self.id = id; self.name = name; self.icon = icon; self.color = color
         self.kind = kind; self.sortOrder = sortOrder; self.archived = archived
+        self.parentId = parentId
     }
 }
 

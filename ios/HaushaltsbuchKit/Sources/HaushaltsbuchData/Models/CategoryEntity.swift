@@ -24,9 +24,11 @@ public final class CategoryEntity: SyncTracked {
     public var kind: String
     public var sortOrder: Int
     public var archived: Bool
+    /// Hauptkategorie, falls dies eine Unterkategorie ist (nur eine Ebene).
+    public var parentId: UUID? = nil
 
     public init(id: UUID = UUID(), name: String, icon: String, color: String, kind: Kind,
-                sortOrder: Int, archived: Bool = false, version: Int? = nil,
+                sortOrder: Int, archived: Bool = false, parentId: UUID? = nil, version: Int? = nil,
                 deleted: Bool = false, isDirty: Bool = false) {
         self.id = id
         self.version = version
@@ -40,12 +42,13 @@ public final class CategoryEntity: SyncTracked {
         self.kind = kind.rawValue
         self.sortOrder = sortOrder
         self.archived = archived
+        self.parentId = parentId
     }
 
     public var kindValue: Kind { Kind(rawValue: kind) ?? .expense }
 
     public var value: CategoryValue {
         CategoryValue(id: id, name: name, icon: icon, color: color, kind: kindValue,
-                      sortOrder: sortOrder, archived: archived)
+                      sortOrder: sortOrder, archived: archived, parentId: parentId)
     }
 }

@@ -300,3 +300,38 @@ private struct Fixture {
     let left = try ctx.fetch(FetchDescriptor<BudgetEntity>()).filter { $0.categoryId == f.cat }
     #expect(left.count == 1)
 }
+
+
+@MainActor @Test func saveCategoryWithParentInheritsColorAndKind() throws {
+    let f = try Fixture()
+    let parent = try f.repo.saveCategory(CategoryDraft(name: "Wohnen", icon: "house", color: "#AA0000", kind: .income))
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#00FF00", kind: .expense,
+                                                      parentId: parent.id))
+    #expect(child.parentId == parent.id)
+    #expect(child.color == "#AA0000")
+    #expect(child.kind == "income")
+    #expect(child.isDirty)
+}
+
+@MainActor @Test func saveCategoryCanClearParent() throws {
+    let f = try Fixture()
+    let parent = try f.makeCategory("Wohnen")
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#00FF00", kind: .expense,
+                                                      parentId: parent.id))
+    try f.repo.saveCategory(CategoryDraft(id: child.id, name: "Strom", icon: "bolt", color: "#00FF00",
+                                          kind: .expense, parentId: nil))
+    #expect(child.parentId == nil)
+}
+
+@MainActor @Test func removeCategoryWithChildrenThrows() throws {
+    let f = try Fixture()
+    let parent = try f.makeCategory("Wohnen")
+    let child = try f.repo.saveCategory(CategoryDraft(name: "Strom", icon: "bolt", color: "#00FF00", kind: .expense,
+                                                      parentId: parent.id))
+    #expect(throws: RepositoryError.hasChildren) { try f.repo.removeCategory(parent) }
+    #expect(!parent.deleted && !parent.archived)
+    // gelöschte Kinder zählen nicht
+    try f.repo.removeCategory(child)
+    try f.repo.removeCategory(parent)
+    #expect(parent.deleted)
+}
