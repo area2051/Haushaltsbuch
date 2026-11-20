@@ -29,6 +29,9 @@ describe('POST /sync', () => {
     return { admin, token: accessToken }
   }
 
+  // Categories without subcategories (deleting a parent that has children is rejected).
+  const leafCategories = <C extends Row>(cats: C[]) => cats.filter((c) => !cats.some((o) => o.parentId === c.id))
+
   async function addMember(adminToken: string, username = 'anna') {
     const res = await t.app.inject({
       method: 'POST',
@@ -89,7 +92,7 @@ describe('POST /sync', () => {
     const r = await sync(token, 0)
     expect(r.fullResync).toBe(false)
     expect(r.rejected).toEqual([])
-    expect(r.changes.categories).toHaveLength(10)
+    expect(r.changes.categories).toHaveLength(48)
     expect(r.changes.users).toHaveLength(1)
     expect(r.changes.users[0]).toMatchObject({ ...admin, deleted: false })
     expect(r.changes.users[0]).not.toHaveProperty('passwordHash')
@@ -119,7 +122,7 @@ describe('POST /sync', () => {
   test('only changes after lastVersion are returned', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const cat = first.changes.categories[0]!.id
+    const cat = leafCategories(first.changes.categories)[0]!.id
     const record = txn({ categoryId: cat, paidBy: admin.id })
     const pushed = await sync(token, first.currentVersion, { transactions: [record] })
     expect(pushed.changes.categories).toEqual([])
@@ -261,7 +264,7 @@ describe('POST /sync', () => {
   test('deleting a category in use → rejected category_in_use', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const cat = first.changes.categories[0]!
+    const cat = leafCategories(first.changes.categories)[0]!
     await sync(token, 0, { transactions: [txn({ categoryId: cat.id, paidBy: admin.id })] })
     const { version: _v, ...catRecord } = cat
     const r = await sync(token, 0, { categories: [{ ...catRecord, deleted: true }] })
@@ -270,7 +273,7 @@ describe('POST /sync', () => {
     expect(row!.deleted).toBe(false)
 
     // A category referenced only by an active rule is in use as well.
-    const cat2 = first.changes.categories[1]!
+    const cat2 = leafCategories(first.changes.categories)[1]!
     await sync(token, 0, { recurringRules: [rule({ categoryId: cat2.id, paidBy: admin.id })] })
     const { version: _v2, ...cat2Record } = cat2
     const r2 = await sync(token, 0, { categories: [{ ...cat2Record, deleted: true }] })
@@ -280,7 +283,7 @@ describe('POST /sync', () => {
   test('deleting a category together with its last transaction in one push succeeds', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const record = txn({ categoryId: cat.id, paidBy: admin.id })
     await sync(token, 0, { transactions: [record] })
     const r = await sync(token, 0, {
@@ -295,7 +298,7 @@ describe('POST /sync', () => {
   test('deleting a category soft-deletes its active budgets', async () => {
     const { token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const budget = { id: randomUUID(), deleted: false, categoryId: cat.id, monthlyLimitCents: 30000 }
     const withBudget = await sync(token, first.currentVersion, { budgets: [budget] })
     expect(withBudget.rejected).toEqual([])
@@ -311,7 +314,7 @@ describe('POST /sync', () => {
   test('booking on a deleted category restores it as archived', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const del = await sync(token, first.currentVersion, { categories: [{ ...cat, deleted: true }] })
     expect(del.rejected).toEqual([])
     expect(del.changes.categories).toEqual([expect.objectContaining({ id: cat.id, deleted: true })])
@@ -326,7 +329,7 @@ describe('POST /sync', () => {
   test('a rejected record leaves no partial state (category restore is rolled back)', async () => {
     const { token } = await start()
     const first = await sync(token, 0)
-    const { version: _v, ...cat } = first.changes.categories[0]!
+    const { version: _v, ...cat } = leafCategories(first.changes.categories)[0]!
     const del = await sync(token, 0, { categories: [{ ...cat, deleted: true }] })
     const record = txn({ categoryId: cat.id, paidBy: randomUUID() })
     const r = await sync(token, del.currentVersion, { transactions: [record] })
@@ -339,12 +342,12 @@ describe('POST /sync', () => {
   test('lastVersion ahead of server → fullResync with all data', async () => {
     const { admin, token } = await start()
     const first = await sync(token, 0)
-    const cat = first.changes.categories[0]!.id
+    const cat = leafCategories(first.changes.categories)[0]!.id
     const record = txn({ categoryId: cat, paidBy: admin.id })
     const r = await sync(token, first.currentVersion + 1000, { transactions: [record] })
     expect(r.fullResync).toBe(true)
     expect(r.rejected).toEqual([])
-    expect(r.changes.categories).toHaveLength(10)
+    expect(r.changes.categories).toHaveLength(48)
     expect(r.changes.users).toHaveLength(1)
     expect(r.changes.transactions.map((x) => x.id)).toEqual([record.id])
     expect(r.currentVersion).toBeGreaterThan(first.currentVersion)
@@ -367,7 +370,7 @@ describe('POST /sync', () => {
   test('after a backup restore, a client below the resync floor gets fullResync once; others do not', async () => {
     const { admin, token } = await start()
     const before = await sync(token, 0)
-    const cat = before.changes.categories[0]!.id
+    const cat = leafCategories(before.changes.categories)[0]!.id
     // Device B synced before the backup was taken.
     const oldVersion = before.currentVersion
     // Simulate the restore step of docs/betrieb.md (as if a backup taken right now was restored).
@@ -378,7 +381,7 @@ describe('POST /sync', () => {
 
     const resynced = await sync(token, oldVersion)
     expect(resynced.fullResync).toBe(true)
-    expect(resynced.changes.categories).toHaveLength(10)
+    expect(resynced.changes.categories).toHaveLength(48)
     expect(resynced.changes.users).toHaveLength(1)
     // No write since the restore: the floor is the current version, so the next sync is a normal one.
     expect(resynced.currentVersion).toBe(floor)
