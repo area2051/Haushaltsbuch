@@ -48,9 +48,21 @@ Der Build-Kontext ist das Repo-Wurzelverzeichnis, weil das Image auch die Web-Ap
 
 ## Update
 
+Auf dem NAS per SSH im Repo-Ordner (Git-Clone auf Branch `main`):
+
 ```bash
-git pull            # bzw. neuen Stand auf das NAS kopieren
-docker compose up -d --build
+sh ops/update.sh
+```
+
+Das Skript holt `origin/main` und hört mit „Bereits aktuell“ auf, wenn es nichts Neues gibt. Sonst zieht es zuerst ein Backup (wie der `backup`-Container), spielt den neuen Stand per `git merge --ff-only` ein, baut `api` neu und wartet bis zu 90 s auf `/health`. Schlägt Build oder Health-Check fehl, startet es das vorherige Image wieder und setzt den Git-Stand auf den alten Commit zurück; das Backup von eben bleibt für den Notfall liegen (Migrationen können schon gelaufen sein). `--force` baut auch ohne neuen Commit neu.
+
+Es bricht vorher ab, wenn der Clone nicht auf `main` steht (`git switch main`), versionierte Dateien lokal geändert sind oder der Compose-Projektname des laufenden Stacks nicht eindeutig ist (dann `COMPOSE_PROJECT_NAME=<name> sh ops/update.sh`; den Namen zeigt `docker compose ls`). Es nutzt immer `docker-compose.yml` aus dem Repo, auch wenn UGOS daneben ein eigenes `docker-compose.yaml` angelegt hat.
+
+Von Hand geht es weiterhin so:
+
+```bash
+git pull
+docker compose -f docker-compose.yml up -d --build
 ```
 
 Migrationen laufen beim Start der API automatisch. Daten bleiben in `${DATA_DIR}/postgres` erhalten.
