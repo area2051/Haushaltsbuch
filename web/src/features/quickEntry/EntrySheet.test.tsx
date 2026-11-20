@@ -224,3 +224,29 @@ test('editing a subcategory booking preselects the main category and the subcate
   await waitFor(() => expect(pushed(ctx.sync)).toHaveLength(1))
   expect(pushed(ctx.sync)[0]).toMatchObject({ id: 't-power', categoryId: 'c-home' })
 })
+
+test('editing a booking on an archived subcategory shows its chip even when no sibling is selectable', async () => {
+  const ctx = await renderSignedIn(
+    <EntryProvider>
+      <OpenButton />
+    </EntryProvider>,
+    {
+      seed: (sync) => {
+        seedCategories(sync)
+        // Every child of Wohnen is archived now (Gas already is).
+        sync.put('categories', { id: 'c-power', name: 'Strom', icon: 'bolt', color: '#795548', kind: 'expense', sortOrder: 0, parentId: 'c-home', archived: true, deleted: false })
+        sync.put('transactions', { id: 't-power', amountCents: 6000, kind: 'expense', categoryId: 'c-power', date: '2026-11-02', note: null, paidBy: 'u1', recurringRuleId: null, deleted: false })
+      },
+    },
+  )
+  const user = userEvent.setup()
+  await user.click(await screen.findByText('Strombuchung bearbeiten'))
+  const dialog = within(await screen.findByRole('dialog'))
+  expect(chips(dialog).getByRole('button', { name: 'Strom' })).toHaveAttribute('aria-pressed', 'true')
+  expect(chips(dialog).queryByRole('button', { name: 'Gas' })).toBeNull()
+
+  await user.click(chips(dialog).getByRole('button', { name: 'Allgemein' }))
+  await user.click(dialog.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(pushed(ctx.sync)).toHaveLength(1))
+  expect(pushed(ctx.sync)[0]).toMatchObject({ id: 't-power', categoryId: 'c-home' })
+})

@@ -163,7 +163,8 @@ function EntryForm({ editing, onDone }: { editing: Transaction | null; onDone():
   /** Category taps only select (no immediate save). */
   const selecting = !!editing || details
   const mainId = draft.categoryId ? tree.rootOf(draft.categoryId) : ''
-  const hasSubcategories = (id: string) => tree.childrenOf(id).some(tree.isSelectable)
+  // The current value counts too, so editing a booking on an archived subcategory still shows its chip.
+  const hasSubcategories = (id: string) => tree.childrenOf(id).some((c) => tree.isSelectable(c) || c.id === draft.categoryId)
 
   function pickMain(id: string) {
     // Picking another main category starts at „Allgemein“ (the main category itself).
