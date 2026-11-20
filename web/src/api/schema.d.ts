@@ -210,6 +210,7 @@ export interface components {
             setupRequired: boolean;
             /** @enum {string} */
             status: "ok";
+            version: string;
         };
         LoginRequest: {
             deviceName?: string;

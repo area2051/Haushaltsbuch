@@ -8,6 +8,7 @@ import { LOCK_SETUP, LOCK_SYNC, lock } from '../db/locks.js'
 import { categories, users } from '../db/schema.js'
 import { AppError, errorResponses } from '../errors.js'
 import { setupBody, toUserDto, userDto } from '../users/dto.js'
+import { APP_VERSION } from '../version.js'
 import { DEFAULT_CATEGORIES } from './defaultCategories.js'
 
 type Executor = Pick<Db, 'select'>
@@ -29,14 +30,14 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
         operationId: 'getHealth',
         security: [],
         response: {
-          200: z.object({ status: z.literal('ok'), setupRequired: z.boolean() }).meta({ id: 'HealthResponse' }),
+          200: z.object({ status: z.literal('ok'), setupRequired: z.boolean(), version: z.string() }).meta({ id: 'HealthResponse' }),
           ...errorResponses(),
         },
       },
     },
     async () => {
       const [row] = await app.db.select({ n: count() }).from(users)
-      return { status: 'ok' as const, setupRequired: (row?.n ?? 0) === 0 }
+      return { status: 'ok' as const, setupRequired: (row?.n ?? 0) === 0, version: APP_VERSION }
     },
   )
 
