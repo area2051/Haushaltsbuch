@@ -22,6 +22,13 @@
       "when": 1795126001053,
       "tag": "0002_omniscient_thunderbolts",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795161016158,
+      "tag": "0003_faulty_psylocke",
+      "breakpoints": true
     }
   ]
 }

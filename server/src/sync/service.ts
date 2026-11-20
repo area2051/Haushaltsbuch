@@ -134,11 +134,17 @@ async function upsertCategory(sp: Tx, r: CategoryRecord): Promise<void> {
       .limit(1)
     if (txn || rule) throw new Rejection('category_in_use')
   }
+  const [existing] = await sp
+    .select({ parentId: categories.parentId })
+    .from(categories)
+    .where(eq(categories.id, r.id))
+  // Older clients don't send `parentId`: keep the stored one instead of resetting it to top-level.
+  const parentId = r.parentId === undefined ? (existing?.parentId ?? null) : r.parentId
   const { id: _id, ...fields } = r
   await sp
     .insert(categories)
-    .values(r)
-    .onConflictDoUpdate({ target: categories.id, set: { ...fields, ...bump() } })
+    .values({ ...r, parentId })
+    .onConflictDoUpdate({ target: categories.id, set: { ...fields, parentId, ...bump() } })
   if (r.deleted) {
     // Budgets of a deleted category are meaningless; delete them in the same savepoint.
     await sp
@@ -245,6 +251,7 @@ export async function pull(
         kind: categories.kind,
         sortOrder: categories.sortOrder,
         archived: categories.archived,
+        parentId: categories.parentId,
       })
       .from(categories)
       .where(gt(categories.version, sinceVersion))

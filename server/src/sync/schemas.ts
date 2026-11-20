@@ -33,6 +33,8 @@ export const categoryRecord = z.object({
   kind,
   sortOrder: z.number().int().min(-INT32_MAX).max(INT32_MAX),
   archived: z.boolean(),
+  /** Missing (older apps) keeps the stored parent; null makes the category top-level. */
+  parentId: id.nullable().optional(),
 }).meta({ id: 'CategoryRecord' })
 
 export const transactionRecord = z.object({
@@ -112,6 +114,7 @@ export const categoryRecordOut = z.object({
   kind,
   sortOrder: z.number().int(),
   archived: z.boolean(),
+  parentId: outId.nullable(),
 }).meta({ id: 'CategoryRecordOut' })
 
 export const transactionRecordOut = z.object({

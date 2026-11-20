@@ -456,6 +456,44 @@ describe('POST /sync', () => {
     expect(r.changes.budgets).toEqual([{ ...b1, version: expect.any(Number) }])
   })
 
+  function category(over: { parentId?: string | null } & Record<string, unknown> = {}) {
+    return {
+      id: randomUUID(),
+      deleted: false,
+      name: 'Obst',
+      icon: 'cart',
+      color: '#00AA00',
+      kind: 'expense' as const,
+      sortOrder: 0,
+      archived: false,
+      ...over,
+    }
+  }
+
+  test('category parentId round-trips and defaults to null', async () => {
+    const { token } = await start()
+    const parent = category({ name: 'Lebensmittel' })
+    const r1 = await sync(token, 0, { categories: [parent] })
+    expect(r1.rejected).toEqual([])
+    expect(r1.changes.categories.find((c) => c.id === parent.id)).toMatchObject({ parentId: null })
+
+    const child = category({ parentId: parent.id })
+    const r2 = await sync(token, 0, { categories: [child] })
+    expect(r2.rejected).toEqual([])
+    expect(r2.changes.categories.find((c) => c.id === child.id)).toMatchObject({ parentId: parent.id })
+  })
+
+  test('push without parentId keeps the stored parent', async () => {
+    const { token } = await start()
+    const parent = category({ name: 'Lebensmittel' })
+    const child = category({ parentId: parent.id })
+    await sync(token, 0, { categories: [parent, child] })
+    const { parentId: _p, ...oldApp } = child
+    const r = await sync(token, 0, { categories: [{ ...oldApp, name: 'Gemüse' }] })
+    expect(r.rejected).toEqual([])
+    expect(r.changes.categories.find((c) => c.id === child.id)).toMatchObject({ name: 'Gemüse', parentId: parent.id })
+  })
+
   test('new recurring rule gets nextDueDate = startDate', async () => {
     const onRulesChanged = async () => {}
     const { admin, token } = await start({ onRulesChanged })
