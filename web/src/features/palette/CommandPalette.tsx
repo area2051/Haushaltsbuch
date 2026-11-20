@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useData } from '../../app/AppContext'
 import { CategoryIcon } from '../../components/CategoryIcon'
+import { categoryTree } from '../../domain/categoryTree'
 import { germanDate } from '../../domain/dates'
 import { formatSigned } from '../../domain/money'
 import { useEntry } from '../quickEntry/EntrySheet'
@@ -52,7 +53,12 @@ export function CommandPalette() {
   const q = fold(query.trim())
   const shownActions = q ? actions.filter((a) => fold(a.label).includes(q)) : actions
   const matches = useMemo(
-    () => (q.length < 2 ? [] : sections([...data.transactions.values()], { ...emptyFilter, search: query }, data.categories).flatMap((s) => s.items).slice(0, 8)),
+    () =>
+      q.length < 2
+        ? []
+        : sections([...data.transactions.values()], { ...emptyFilter, search: query }, categoryTree([...data.categories.values()]))
+            .flatMap((s) => s.items)
+            .slice(0, 8),
     [q, query, data.transactions, data.categories],
   )
 

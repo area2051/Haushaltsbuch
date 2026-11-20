@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { categoryTree } from './categoryTree'
 import { budget, cat, tx } from '../test/fixtures'
 import {
   budgetLevel,
@@ -9,6 +10,7 @@ import {
   expensesByPerson,
   monthlyTrend,
   rankCategories,
+  subcategoryBreakdown,
   summary,
 } from './analytics'
 
@@ -140,4 +142,41 @@ test('categoryTrend: top categories over the window, the rest as others, oldest 
     { month: '2026-10', a: 500, b: 0, others: 0 },
     { month: '2026-11', a: 300, b: 400, others: 100 },
   ])
+})
+
+describe('subcategories', () => {
+  const tree = categoryTree([
+    cat('home', 'expense', { name: 'Wohnen' }),
+    cat('power', 'expense', { name: 'Strom', parentId: 'home' }),
+    cat('rent', 'expense', { name: 'Miete', parentId: 'home' }),
+  ])
+  const txs = [
+    tx(100, '2026-11-02', { categoryId: 'home' }),
+    tx(300, '2026-11-03', { categoryId: 'power' }),
+    tx(200, '2026-11-04', { categoryId: 'rent' }),
+    tx(50, '2026-10-04', { categoryId: 'rent' }),
+  ]
+
+  test('rolls subcategory expenses into their parent', () => {
+    expect(expensesByCategory(txs, '2026-11', tree.rootOf)).toEqual([{ id: 'home', cents: 600 }])
+  })
+
+  test('budget counts subcategory spending', () => {
+    const [p] = budgetProgress([budget('home', 1000)], txs, '2026-11', tree.rootOf)
+    expect(p!.spentCents).toBe(600)
+  })
+
+  test('breakdown lists general and each child', () => {
+    expect(subcategoryBreakdown(txs, '2026-11', 'home', tree)).toEqual([
+      { id: 'power', cents: 300 },
+      { id: 'rent', cents: 200 },
+      { id: 'home', cents: 100 },
+    ])
+  })
+
+  test('category trend rolls up', () => {
+    const t = categoryTrend(txs, '2026-11', 2, 3, tree.rootOf)
+    expect(t.top).toEqual(['home'])
+    expect(t.rows.map((r) => r.home)).toEqual([50, 600])
+  })
 })

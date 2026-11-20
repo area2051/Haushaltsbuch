@@ -1,3 +1,4 @@
+import type { CategoryTree } from './categoryTree'
 import { addDays, addMonths, type Day, type Month, monthOf } from './dates'
 import type { Budget, Category, Kind, Transaction } from './types'
 
@@ -40,8 +41,16 @@ function expensesBy(txs: Transaction[], m: Month, key: (t: Transaction) => strin
 const sorted = (sums: Map<string, number>): Total[] =>
   [...sums].map(([id, cents]) => ({ id, cents })).sort((a, b) => b.cents - a.cents || a.id.localeCompare(b.id))
 
-export const expensesByCategory = (txs: Transaction[], m: Month): Total[] =>
-  sorted(expensesBy(txs, m, (t) => t.categoryId))
+const identity = (id: string): string => id
+
+/** Month expenses per main category when `rootOf` is given (subcategories roll up into their parent). */
+export const expensesByCategory = (txs: Transaction[], m: Month, rootOf: (id: string) => string = identity): Total[] =>
+  sorted(expensesBy(txs, m, (t) => rootOf(t.categoryId)))
+
+/** Month expenses of one main category: bookings on it directly (`id = parentId`) and per child. */
+export function subcategoryBreakdown(txs: Transaction[], m: Month, parentId: string, tree: CategoryTree): Total[] {
+  return sorted(expensesBy(txs.filter((t) => tree.rootOf(t.categoryId) === parentId), m, (t) => t.categoryId))
+}
 
 export const expensesByPerson = (txs: Transaction[], m: Month): Total[] => sorted(expensesBy(txs, m, (t) => t.paidBy))
 
@@ -53,8 +62,8 @@ export function budgetLevel(spent: number, limit: number): BudgetLevel {
   return 'ok'
 }
 
-export function budgetProgress(budgets: Budget[], txs: Transaction[], m: Month): BudgetProgress[] {
-  const spent = expensesBy(txs, m, (t) => t.categoryId)
+export function budgetProgress(budgets: Budget[], txs: Transaction[], m: Month, rootOf: (id: string) => string = identity): BudgetProgress[] {
+  const spent = expensesBy(txs, m, (t) => rootOf(t.categoryId))
   return budgets.map((b) => {
     const s = spent.get(b.categoryId) ?? 0
     const limit = b.monthlyLimitCents
@@ -106,15 +115,16 @@ export type CategoryTrend = { top: string[]; rows: Array<{ month: Month; others:
  * Expenses per month for the `topN` categories with the most spending over the window
  * (`count` months ending with `end`, oldest first); everything else is summed as `others`.
  */
-export function categoryTrend(txs: Transaction[], end: Month, count: number, topN: number): CategoryTrend {
+export function categoryTrend(txs: Transaction[], end: Month, count: number, topN: number, rootOf: (id: string) => string = identity): CategoryTrend {
   const months = Array.from({ length: count }, (_, i) => addMonths(end, i - count + 1))
   const perMonth = new Map(months.map((m) => [m, new Map<string, number>()]))
   const totals = new Map<string, number>()
   for (const t of txs) {
     const m = perMonth.get(monthOf(t.date))
     if (t.kind !== 'expense' || !m) continue
-    m.set(t.categoryId, (m.get(t.categoryId) ?? 0) + t.amountCents)
-    totals.set(t.categoryId, (totals.get(t.categoryId) ?? 0) + t.amountCents)
+    const id = rootOf(t.categoryId)
+    m.set(id, (m.get(id) ?? 0) + t.amountCents)
+    totals.set(id, (totals.get(id) ?? 0) + t.amountCents)
   }
   const top = sorted(totals).slice(0, topN).map((t) => t.id)
   const rows = months.map((month) => {

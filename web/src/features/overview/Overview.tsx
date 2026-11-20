@@ -10,6 +10,7 @@ import { Button } from '../../components/ui/Button'
 import { AnimatedNumber, EmptyState, PageHeader, Progress, Skeleton } from '../../components/ui/Misc'
 import { Tile, TileLabel } from '../../components/ui/Tile'
 import { categoryTrend, cumulativeDailyExpenses, monthlyTrend } from '../../domain/analytics'
+import { categoryTree } from '../../domain/categoryTree'
 import { useMonthParam } from '../../app/useMonthParam'
 import { daysInMonth, monthOf, monthShort, today } from '../../domain/dates'
 import { formatMoney } from '../../domain/money'
@@ -45,7 +46,7 @@ export function Overview() {
     [txs, data.categories, data.names, data.budgets, month],
   )
   const trend = useMemo(() => monthlyTrend(txs, month, 12), [txs, month])
-  const catTrend = useMemo(() => categoryTrend(txs, month, 6, 5), [txs, month])
+  const catTrend = useMemo(() => categoryTrend(txs, month, 6, 5, categoryTree([...data.categories.values()]).rootOf), [txs, month, data.categories])
   // Whole month on the x axis; in the current month the line stops today.
   const spark = useMemo(() => {
     const now = today()

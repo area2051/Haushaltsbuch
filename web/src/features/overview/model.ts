@@ -1,4 +1,5 @@
 import { type BudgetProgress, budgetProgress, expensesByCategory, expensesByPerson, type MonthSummary, summary } from '../../domain/analytics'
+import { categoryTree } from '../../domain/categoryTree'
 import { type Month, monthOf } from '../../domain/dates'
 import type { Budget, Category, Member, Transaction } from '../../domain/types'
 
@@ -32,7 +33,8 @@ export function overviewModel(input: {
   const catById = new Map(input.categories.map((c) => [c.id, c]))
   const names = new Map(input.members.map((m) => [m.id, m.displayName]))
 
-  const totals = expensesByCategory(txs, month)
+  const { rootOf } = categoryTree(input.categories)
+  const totals = expensesByCategory(txs, month, rootOf)
   const slices: Slice[] = totals.slice(0, MAX_SLICES).map((t) => {
     const c = catById.get(t.id)
     return { id: t.id, name: c?.name ?? 'Unbekannt', color: c?.color ?? OTHERS_COLOR, icon: c?.icon ?? '', cents: t.cents }
@@ -44,7 +46,7 @@ export function overviewModel(input: {
 
   // Archived or deleted categories (missing here) do not warn.
   const live = input.budgets.filter((b) => catById.get(b.categoryId)?.archived === false)
-  const budgets = budgetProgress(live, txs, month).sort((a, b) => b.ratio - a.ratio)
+  const budgets = budgetProgress(live, txs, month, rootOf).sort((a, b) => b.ratio - a.ratio)
   const warnings = budgets.filter((p) => p.level !== 'ok')
 
   const monthTxs = txs.filter((t) => monthOf(t.date) === month)

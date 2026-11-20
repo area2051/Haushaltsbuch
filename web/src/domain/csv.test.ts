@@ -1,9 +1,15 @@
 import { expect, test } from 'vitest'
+import { categoryTree } from './categoryTree'
 import { cat, tx } from '../test/fixtures'
 import { csvBlob, csvFileName, makeCsv } from './csv'
 
-const HEADER = 'Datum;Art;Kategorie;Betrag;Notiz;Bezahlt von'
-const cats = new Map([['food', cat('food', 'expense', { name: 'Lebensmittel' })], ['pay', cat('pay', 'income', { name: 'Gehalt' })]])
+const HEADER = 'Datum;Art;Kategorie;Unterkategorie;Betrag;Notiz;Bezahlt von'
+const cats = categoryTree([
+  cat('food', 'expense', { name: 'Lebensmittel' }),
+  cat('pay', 'income', { name: 'Gehalt' }),
+  cat('home', 'expense', { name: 'Wohnen' }),
+  cat('power', 'expense', { name: 'Strom', parentId: 'home' }),
+])
 const members = new Map([['u1', 'Anna']])
 const csv = (txs: ReturnType<typeof tx>[], from = '2026-01-01', to = '2026-12-31') => makeCsv(txs, cats, members, from, to)
 
@@ -18,15 +24,15 @@ test('rows use German date, kind, category, decimal comma and payer', () => {
   ])
   expect(out.split('\r\n')).toEqual([
     HEADER,
-    '01.02.2026;Einnahme;Gehalt;1234,56;Nov;Anna',
-    '01.02.2026;Ausgabe;Lebensmittel;0,05;;Anna',
+    '01.02.2026;Einnahme;Gehalt;;1234,56;Nov;Anna',
+    '01.02.2026;Ausgabe;Lebensmittel;;0,05;;Anna',
     '',
   ])
 })
 
 test('rows are sorted by date and stable within a day', () => {
   const lines = csv([tx(3, '2026-03-02'), tx(1, '2026-03-01'), tx(2, '2026-03-02'), tx(4, '2026-03-01')]).split('\r\n')
-  expect(lines.slice(1, 5).map((l) => l.split(';')[3])).toEqual(['0,01', '0,04', '0,03', '0,02'])
+  expect(lines.slice(1, 5).map((l) => l.split(';')[4])).toEqual(['0,01', '0,04', '0,03', '0,02'])
 })
 
 test('range is inclusive on both ends', () => {
@@ -47,7 +53,7 @@ test('fields with separators, quotes or line breaks are quoted', () => {
 })
 
 test('unknown category and payer stay empty', () => {
-  expect(csv([tx(100, '2026-11-01', { categoryId: 'gone', paidBy: 'gone' })])).toContain('01.11.2026;Ausgabe;;1,00;;\r\n')
+  expect(csv([tx(100, '2026-11-01', { categoryId: 'gone', paidBy: 'gone' })])).toContain('01.11.2026;Ausgabe;;;1,00;;\r\n')
 })
 
 test('blob starts with a UTF-8 BOM', async () => {
@@ -57,4 +63,8 @@ test('blob starts with a UTF-8 BOM', async () => {
 
 test('file name names the range', () => {
   expect(csvFileName('2026-11-01', '2026-11-30')).toBe('Haushaltsbuch_2026-11-01_2026-11-30.csv')
+})
+
+test('subcategory booking fills Kategorie and Unterkategorie', () => {
+  expect(csv([tx(100, '2026-02-01', { categoryId: 'power', paidBy: 'u1' })]).split('\r\n')[1]).toBe('01.02.2026;Ausgabe;Wohnen;Strom;1,00;;Anna')
 })

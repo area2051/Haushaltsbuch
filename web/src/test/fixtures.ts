@@ -24,7 +24,7 @@ export function tx(
 }
 
 export function cat(id: string, kind: Kind = 'expense', opts: Partial<Category> = {}): Category {
-  return { id, name: id, icon: 'cart', color: '#4CAF50', kind, sortOrder: 0, archived: false, deleted: false, version: 1, ...opts }
+  return { id, name: id, icon: 'cart', color: '#4CAF50', kind, sortOrder: 0, parentId: null, archived: false, deleted: false, version: 1, ...opts }
 }
 
 export function budget(categoryId: string, monthlyLimitCents: number): Budget {

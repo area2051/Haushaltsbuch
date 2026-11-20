@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { ChipSelect } from '../../components/ui/ChipSelect'
 import { EmptyState, PageHeader, Skeleton } from '../../components/ui/Misc'
 import { Tile, TileLabel } from '../../components/ui/Tile'
+import { categoryTree } from '../../domain/categoryTree'
 import { addMonths, dayHeading, isValidDay, monthOf, monthTitle, today } from '../../domain/dates'
 import { formatMoney } from '../../domain/money'
 import type { Kind } from '../../domain/types'
@@ -30,7 +31,8 @@ export function Transactions() {
   }
 
   const txs = useMemo(() => [...data.transactions.values()], [data.transactions])
-  const list = useMemo(() => sections(txs, filter, data.categories), [txs, filter, data.categories])
+  const tree = useMemo(() => categoryTree([...data.categories.values()]), [data.categories])
+  const list = useMemo(() => sections(txs, filter, tree), [txs, filter, tree])
   const totals = useMemo(() => {
     let income = 0
     let expense = 0

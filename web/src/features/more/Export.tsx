@@ -6,6 +6,7 @@ import { Field, Input } from '../../components/ui/Field'
 import { BackLink, PageHeader } from '../../components/ui/Misc'
 import { Segmented } from '../../components/ui/Segmented'
 import { Tile } from '../../components/ui/Tile'
+import { categoryTree } from '../../domain/categoryTree'
 import { csvBlob, csvFileName, makeCsv } from '../../domain/csv'
 import { germanDate, today } from '../../domain/dates'
 import { type ExportPeriod, exportRange } from './exportRange'
@@ -16,6 +17,7 @@ export function Export() {
   const [period, setPeriod] = useState<ExportPeriod>('thisMonth')
   const [from, setFrom] = useState(`${now.slice(0, 7)}-01`)
   const [to, setTo] = useState(now)
+  const tree = useMemo(() => categoryTree([...data.categories.values()]), [data.categories])
   const range = exportRange(period, now, from, to)
   const txs = useMemo(() => [...data.transactions.values()], [data.transactions])
   const count = range ? txs.filter((t) => t.date >= range.from && t.date <= range.to).length : 0
@@ -23,7 +25,7 @@ export function Export() {
   function download() {
     if (!range) return
     // Names include removed members (iOS exports their names too).
-    const url = URL.createObjectURL(csvBlob(makeCsv(txs, data.categories, data.names, range.from, range.to)))
+    const url = URL.createObjectURL(csvBlob(makeCsv(txs, tree, data.names, range.from, range.to)))
     const a = document.createElement('a')
     a.href = url
     a.download = csvFileName(range.from, range.to)
